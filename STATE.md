@@ -3,10 +3,10 @@
 > File hidup. Dibaca di awal tiap sesi, ditulis ulang di akhir tiap sesi.
 > Satu-satunya memori antar sesi agent. Jaga tetap pendek (< 100 baris).
 
-**Terakhir diperbarui:** 2026-08-28 (sesi P8)
-**Status project:** 🟨 **JALAN** — 9/15 fase selesai, acceptance 4/12
-**Fase aktif:** — (P8 selesai & ter-push)
-**Fase berikutnya:** **P9 — Bukti Crash-Recovery** (kill -9 ≥2× → resume → 0 dup; `docs/RESUME_PROOF.md`)
+**Terakhir diperbarui:** 2026-08-28 (sesi P9)
+**Status project:** 🟨 **JALAN** — 10/15 fase selesai, acceptance 5/12
+**Fase aktif:** — (P9 selesai & ter-push)
+**Fase berikutnya:** **P10 — Dashboard** (FastAPI+HTMX `:8120`, angka hidup cocok DB)
 
 ---
 ## Status fase
@@ -22,7 +22,7 @@
 | P6 Worker | ✅ selesai | commit `P06`; 200 job: ok=195 (195 konfirmasi unik, 0 kosong), failed=5; subset 4-mode: ok/retryable/timeout/permanent = 12/12/6/6 |
 | P7 Konkurensi | ✅ selesai | commit `P07`; 4 worker, 500 klaim, 0 double-success, 25,86 job/dtk; 2 test konkurensi |
 | P8 Ketahanan | ✅ selesai | commit `P08`; chaos 100: ok 80 / failed 10 / dead 10 (semua ber-`last_error`); kill -9 → lease → ok |
-| P9 Bukti Crash-Recovery | ⬜ belum | kill -9 ≥2× → resume → 0 dup, `docs/RESUME_PROOF.md` |
+| P9 Bukti Crash-Recovery | ✅ selesai | commit `P09`; 3k chaos, kill -9 2×, ok 423→804→2.907, 8 yatim pulih, 0 dup |
 | P10 Dashboard | ⬜ belum | FastAPI+HTMX `:8120`, angka hidup cocok DB |
 | P11 Run Penuh 50k | ⬜ belum | 50k + chaos + ≥2 kill → status akhir bersih, 0 dup |
 | P12 Throughput | ⬜ belum | record/jam per N worker → ekstrapolasi 6 juta record |
@@ -39,8 +39,7 @@ Legenda: ⬜ belum · 🟨 jalan · ✅ selesai · 🟥 blocked
 - **P3:** `scripts/gen_data.py` CSV+XLSX write-only (50k, seed 42), `docs/DATA_DICTIONARY.md`, 2 test
 - **P4:** `src/schema.py` (WAL+busy_timeout, `assert_transition`, `status_counts`),
   `src/tests/test_schema.py` 24 test, `docs/SCHEMA.md` **terkunci** (`SCHEMA_VERSION=1`)
-- **P5:** `src/load.py` stream CSV/XLSX + validasi sebelum `INSERT OR IGNORE`;
-  `src/test_load.py` 6 test
+- **P5:** `src/load.py` stream CSV/XLSX + validasi sebelum `INSERT OR IGNORE`; `src/test_load.py` 6 test
 - **P6:** `src/store.py` (`claim_one` `BEGIN IMMEDIATE`, `mark_ok`/`mark_failed`/`release`,
   transisi + baris audit dalam satu transaksi), `src/worker.py` (Chromium headless, parser
   halaman hasil, pagar target lokal D14), `src/test_worker.py` 30 test dgn fixture HTML
@@ -52,9 +51,10 @@ Legenda: ⬜ belum · 🟨 jalan · ✅ selesai · 🟥 blocked
   `src/recover.py` CLI, worker menunggu backoff & menyapu lease berkala;
   `src/test_resilience.py` 16 test. D7/D8 **dikunci**: `MAX_ATTEMPTS=5`, base 1 dtk ×2
   (atap 30 dtk), jitter 0-25%, `LEASE_TIMEOUT_SECONDS=120`
-- Repo privat `github.com/rayinailham/surgeline`, `origin/main` = commit `P08` (`ff19f68`).
-  Kolom commit memakai **subjek** (`PNN`), bukan hash — sebuah commit tidak bisa memuat
-  hash-nya sendiri.
+- **P9:** `docs/RESUME_PROOF.md`; run chaos 3.000 job, 2× kill paksa, 8 klaim yatim
+  disapu lease dan dituntaskan; rekaman ditunda ke P14.
+- Repo privat `github.com/rayinailham/surgeline`; kolom commit memakai subjek (`PNN`),
+  bukan hash—sebuah commit tidak bisa memuat hash-nya sendiri.
 
 ## Fakta terverifikasi tentang mesin ini (P0, 2026-08-28)
 - Python project **3.13.13** · Docker/Compose/ffmpeg/Make/sqlite3 CLI ada · port project `8110`/`8120`.
@@ -73,7 +73,7 @@ Legenda: ⬜ belum · 🟨 jalan · ✅ selesai · 🟥 blocked
 | Chaos deterministik | ≈5%, 3 mode, 2 run identik | 112/2.000 = 5,60%; 500=38, lambat=39, validasi=35; diff=0 |
 | Record data uji | 50.000 | 50.000 CSV + XLSX; 49.950 key unik + 50 dup sengaja; 0 invalid |
 | Duplikat external_ref antrean | 0 | 50k dibaca → 49.950 pending; 50 dup ditolak; reload: 0 masuk/50k ditolak; DB dup=0 |
-| Kill -9 saat run → tetap selesai | ≥2× | 1× (P8/A10): worker mati saat `claimed` → lease → `pending` → `ok`, attempts 2, dup 0. Full run ≥2× di P9 |
+| Kill -9 saat run → tetap selesai | ≥2× | P9: 2×; ok 423→804→2.907; 8/8 klaim yatim pulih; terminal 3.000/3.000; dup ref/konfirmasi 0/0 |
 | Kegagalan target ter-retry/tercatat | 100% | chaos 100 job: audit ok 80 / retryable 50 / permanent 10; `dead` 10 (5 percobaan, 100% ber-`last_error`), `failed` 10 (422, 1 percobaan, tanpa retry), 0 pending/claimed tersisa |
 | Gangguan sementara → akhirnya sukses | 100% | target dimatikan di tengah run: 20 job `retryable` → target hidup → 20/20 `ok` di percobaan ke-3 |
 | Nomor konfirmasi tersimpan tiap sukses | 100% | 195/195 (batch 200) + 80/80 (chaos P8) + 20/20 (gangguan sementara); 0 `ok` tanpa konfirmasi, 0 duplikat konfirmasi |
@@ -82,8 +82,8 @@ Legenda: ⬜ belum · 🟨 jalan · ✅ selesai · 🟥 blocked
 | Dashboard vs DB | selisih 0 | — |
 | Throughput | terukur | 25,86 job/dtk @4 worker (500 attempts / 19,335 dtk; baseline P12) |
 | Memori generator / loader | datar | gen 10k=49.956/50k=50.008 KiB; loader 10k=50.600/50k=57.044 KiB (+12,74%) |
-| Unit test hijau | selalu | 91/91 OK (termasuk 16 test ketahanan P8) |
-| Acceptance project | 12/12 | 4/12 (A2 dedup DB, A4 retry/dead-letter, A9 klaim atomik, A10 lease recovery) |
+| Unit test hijau | selalu | 91/91 OK (termasuk 16 test ketahanan P8; gerbang P9) |
+| Acceptance project | 12/12 | 5/12 (A2/A3 dedup+resume, A4 retry/dead-letter, A9 klaim atomik, A10 lease recovery) |
 
 ## Blocker & keputusan masih 🔓
 - Tidak ada blocker. D7 & D8 **terkunci di P8**. 🔓 D11 (dashboard) → **P10**.
@@ -95,7 +95,5 @@ Legenda: ⬜ belum · 🟨 jalan · ✅ selesai · 🟥 blocked
 3. Worker dipagari kode: hanya `127.0.0.1`/`localhost` (D14). Sebelum sesi ber-browser jalankan
    `scripts/arch_provision.sh` + `uv run --no-sync playwright install chromium` (tanpa deps);
    Chromium terverifikasi `151.0.7922.34`.
-4. Mode chaos `server_error` deterministik: job itu tidak akan pernah sukses — sejak P8 ia
-   berhenti sendiri di `dead` setelah 5 percobaan, jadi `--max-jobs` tidak lagi wajib.
-5. Perubahan P8 mengubah perilaku run (backoff menambah waktu tunggu job gagal). Bukti P9
-   harus dijalankan dari versi ini, bukan diambil dari run P6/P7.
+4. Mode chaos `server_error` deterministik berhenti di `dead` setelah 5 percobaan. Bukti P9
+   memakai versi P8: 2.907 ok, 44 failed, 49 dead; 0 status nonterminal.

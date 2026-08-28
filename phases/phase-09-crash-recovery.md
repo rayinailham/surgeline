@@ -47,12 +47,30 @@ terlihat. Boleh ditunda ke P14 (catat keputusannya di `STATE.md`).
 - `docs/RESUME_PROOF.md` (output lengkap 2 kill + verifikasi akhir), rekaman mentah (opsional).
 
 ## Definition of Done
-- [ ] ≥2 `kill -9` di tengah run; `ok` naik monoton (`N2>N1>0`), bukan reset.
-- [ ] Run akhir tuntas: `pending`+`claimed` = 0.
-- [ ] Duplikat `external_ref` = 0 DAN duplikat `confirmation` = 0 (A2/A3).
-- [ ] Output ditempel di `docs/RESUME_PROOF.md`.
-- [ ] Keputusan rekaman dicatat di `STATE.md`.
-- [ ] **Commit + push berhasil** (D13).
+- [x] ≥2 `kill -9` di tengah run; `ok` naik monoton (`423 → 804`), bukan reset.
+- [x] Run akhir tuntas: 3.000 terminal; `pending`+`claimed` = 0.
+- [x] Duplikat `external_ref` = 0 DAN duplikat `confirmation` = 0 (A2/A3).
+- [x] Output ditempel di `docs/RESUME_PROOF.md`.
+- [x] Keputusan rekaman dicatat di `STATE.md`: ditunda ke P14.
+- [x] **Commit + push berhasil** (D13).
+
+## Bukti DoD (2026-08-28)
+
+```text
+kill#1 pid=231590 ok=423 claimed=4
+kill#2 pid=232283 ok=804 claimed=8
+
+status terminal: dead=49 | failed=44 | ok=2907
+pending+claimed=0
+duplikat external_ref=0
+duplikat confirmation untuk job ok=0
+job ok tanpa confirmation=0
+klaim yatim dipulihkan=8/8
+attempt terbuka=0
+```
+
+Output perintah lengkap, termasuk pass antara yang menunggu lease, ada di
+`docs/RESUME_PROOF.md`.
 
 ## Metrik selesai
 `kill#1 ok=N1 · kill#2 ok=N2 · akhir 100% · dup ref=0 · dup konfirmasi=0`
