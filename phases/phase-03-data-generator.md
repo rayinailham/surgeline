@@ -31,7 +31,7 @@ jumlah duplikat sengaja, seed.
 ```bash
 uv run --no-sync python scripts/gen_data.py --rows 50000 --seed 42 --out data/input
 wc -l data/input/records.csv                 # 50001 (header + 50000)
-python -c "import openpyxl; wb=openpyxl.load_workbook('data/input/records.xlsx', read_only=True); ws=wb.active; print(ws.max_row)"
+python -c "import openpyxl; wb=openpyxl.load_workbook('data/input/records.xlsx', read_only=True); ws=wb.active; print(sum(1 for _ in ws.iter_rows(values_only=True)))"
 ```
 
 ---
@@ -40,14 +40,39 @@ python -c "import openpyxl; wb=openpyxl.load_workbook('data/input/records.xlsx',
 - `scripts/gen_data.py`, `data/input/records.{xlsx,csv}` (gitignored), `docs/DATA_DICTIONARY.md`.
 
 ## Definition of Done
-- [ ] 50.000 record dihasilkan ke Excel + CSV (angka baris diverifikasi).
-- [ ] Generator streamed: puncak RSS dicatat & jelas tidak linear terhadap baris (A8).
-- [ ] Sejumlah duplikat `external_ref` sengaja disisipkan; jumlahnya dicatat (untuk P5).
-- [ ] `docs/DATA_DICTIONARY.md` lengkap.
-- [ ] **Commit + push berhasil** (D13) — file data TIDAK ikut (gitignored), hanya script + doc.
+- [x] 50.000 record dihasilkan ke Excel + CSV (angka baris diverifikasi).
+- [x] Generator streamed: puncak RSS dicatat & jelas tidak linear terhadap baris (A8).
+- [x] Sejumlah duplikat `external_ref` sengaja disisipkan; jumlahnya dicatat (untuk P5).
+- [x] `docs/DATA_DICTIONARY.md` lengkap.
+- [x] **Commit + push berhasil** (D13) — file data TIDAK ikut (gitignored), hanya script + doc.
 
 ## Metrik selesai
-`50.000 baris xlsx+csv · puncak RSS … MB (datar) · dup sengaja … · seed 42`
+`50.000 baris xlsx+csv · puncak RSS 48,84 MiB (datar) · dup sengaja 50 · seed 42`
+
+## Bukti P3 (2026-08-28)
+
+```text
+$ uv run --no-sync python -m unittest discover -s src -v
+Ran 13 tests in 0.235s
+OK
+
+$ uv run --no-sync python -c "... generate_dataset(10000, ...); ... ru_maxrss ..."
+rows=10000 peak_rss_kib=49956
+$ uv run --no-sync python -c "... generate_dataset(50000, ...); ... ru_maxrss ..."
+rows=50000 peak_rss_kib=50008
+# 5x baris hanya menambah 52 KiB / 0,10%; RSS tidak tumbuh linear.
+
+$ uv run --no-sync python scripts/gen_data.py --rows 50000 --seed 42 --out data/input
+generated=50000 duplicates=50 seed=42 out=data/input
+$ wc -l data/input/records.csv
+50001 data/input/records.csv
+$ uv run --no-sync python -c "... sum(1 for _ in ws.iter_rows(values_only=True)) ..."
+xlsx_rows=50001
+$ uv run --no-sync python -c "... Counter(external_ref) ... validasi field ..."
+csv_data_rows=50000 unique_refs=49950 duplicate_rows=50 duplicated_keys=50 invalid_rows=0
+$ uv run --no-sync python -c "... bandingkan CSV dan XLSX streamed ..."
+compared_rows=50001 csv_xlsx_mismatches=0
+```
 
 ## Jebakan
 - `openpyxl` mode normal menahan seluruh workbook di memori — WAJIB `write_only=True` untuk tulis,
