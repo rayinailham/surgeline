@@ -3,10 +3,10 @@
 > File hidup. Dibaca di awal tiap sesi, ditulis ulang di akhir tiap sesi.
 > Satu-satunya memori antar sesi agent. Jaga tetap pendek (< 100 baris).
 
-**Terakhir diperbarui:** 2026-08-28 (sesi P6)
-**Status project:** 🟨 **JALAN** — 7/15 fase selesai, acceptance 1/12
-**Fase aktif:** — (P6 selesai & ter-push)
-**Fase berikutnya:** **P7 — Konkurensi** (N worker paralel, 0 double-claim; dasar `claim_one` sudah ada)
+**Terakhir diperbarui:** 2026-08-28 (sesi P7)
+**Status project:** 🟨 **JALAN** — 8/15 fase selesai, acceptance 2/12
+**Fase aktif:** — (P7 selesai & ter-push)
+**Fase berikutnya:** **P8 — Ketahanan** (retry/backoff, dead-letter, lease recovery; kunci D7/D8)
 
 ---
 ## Status fase
@@ -20,7 +20,7 @@
 | P4 Kontrak Data & Skema | ✅ selesai | commit `P04`; `docs/SCHEMA.md` terkunci, `src/schema.py` WAL, dedup `1\|1\|0`, 24 test skema |
 | P5 Loader | ✅ selesai | commit `P05`; 50k dibaca → 49.950 pending, 50 dup ditolak DB; reload +50k ditolak; RSS 55,71 MiB |
 | P6 Worker | ✅ selesai | commit `P06`; 200 job: ok=195 (195 konfirmasi unik, 0 kosong), failed=5; subset 4-mode: ok/retryable/timeout/permanent = 12/12/6/6 |
-| P7 Konkurensi | ⬜ belum | N worker paralel, klaim atomik, 0 double-claim |
+| P7 Konkurensi | ✅ selesai | commit `P07`; 4 worker, 500 klaim, 0 double-success, 25,86 job/dtk; 2 test konkurensi |
 | P8 Ketahanan | ⬜ belum | retry+backoff, dead-letter, lease recovery |
 | P9 Bukti Crash-Recovery | ⬜ belum | kill -9 ≥2× → resume → 0 dup, `docs/RESUME_PROOF.md` |
 | P10 Dashboard | ⬜ belum | FastAPI+HTMX `:8120`, angka hidup cocok DB |
@@ -51,13 +51,13 @@ Legenda: ⬜ belum · 🟨 jalan · ✅ selesai · 🟥 blocked
 - **P6 perbaikan:** klaim `pending` diurut `updated_at` + index `idx_jobs_status_updated_at`
   (sebelumnya `rowid` → 1 job gagal memakan 24 percobaan, 23 job lain tak tersentuh);
   `docs/SCHEMA.md` §3 & `src/schema.py` diperbarui bersama, `SCHEMA_VERSION` tetap 1
-- Repo privat `github.com/rayinailham/surgeline`, `origin/main` = commit `P06`. Kolom commit
+- **P7:** `src/run.py` runner N proses + pembagian limit; retry singkat write lock di `src/store.py`;
+  `src/test_concurrency.py` membuktikan union 500 job, irisan worker kosong, dan retry lock
+- Repo privat `github.com/rayinailham/surgeline`, `origin/main` = commit `P07`. Kolom commit
   memakai **subjek** (`PNN`), bukan hash — sebuah commit tidak bisa memuat hash-nya sendiri.
 
 ## Fakta terverifikasi tentang mesin ini (P0, 2026-08-28)
-- uv `0.12.1` · python project **3.13.13** (sistem 3.14.6) · Docker `29.6.2` · Compose `5.3.1` ·
-  Node `v24.16.0` · ffmpeg `n8.1.2` · GNU Make `4.4.1` · sqlite3 CLI `3.53.4` **ada**
-- Port `8110`/`8120` project. Container lain saat cek: `crosscheck-tut-wordpress-1` (8090) — jangan sentuh.
+- Python project **3.13.13** · Docker/Compose/ffmpeg/Make/sqlite3 CLI ada · port project `8110`/`8120`.
 - `9router.service` (`:20128`) `active` — JANGAN PERNAH disentuh (AGENTS §0). Bisa memutus sesi sendiri.
 - Playwright pip `1.62.0`; cache `~/.cache/ms-playwright` (2,0 GB) berisi chromium-1228/1234, firefox-1538,
   webkit-2336. Jangan prune (MCP chrome-devtools pin chromium-1228).
@@ -77,17 +77,17 @@ Legenda: ⬜ belum · 🟨 jalan · ✅ selesai · 🟥 blocked
 | Kegagalan target ter-retry/tercatat | 100% | subset 24: 36 percobaan tercatat (ok 12, retryable 12, timeout 6, permanent 6); 500 → `pending`, 422 → `failed` + `last_error` |
 | Nomor konfirmasi tersimpan tiap sukses | 100% | 195/195 (batch 200) + 12/12 (subset chaos); 0 `ok` tanpa konfirmasi, 0 bentuk di luar `SL-<8hex>` |
 | Antrean WAL aktif | `journal_mode=wal` | ✅ persisten di file, terbaca proses lain (sqlite3 CLI) |
+| Klaim paralel | 0 double-claim | 4 worker, 500 attempts; 489 ok = 489 ref unik; 0 sukses oleh >1 worker |
 | Dashboard vs DB | selisih 0 | — |
-| Throughput | terukur | — |
+| Throughput | terukur | 25,86 job/dtk @4 worker (500 attempts / 19,335 dtk; baseline P12) |
 | Memori generator / loader | datar | gen 10k=49.956/50k=50.008 KiB; loader 10k=50.600/50k=57.044 KiB (+12,74%) |
-| Unit test hijau | selalu | 73/73 OK (worker+store 30) |
-| Acceptance project | 12/12 | 1/12 (A2 dedup DB) |
+| Unit test hijau | selalu | 75/75 OK (termasuk 2 test konkurensi) |
+| Acceptance project | 12/12 | 2/12 (A2 dedup DB, A9 klaim atomik) |
 
 ## Blocker & keputusan masih 🔓
 - Tidak ada blocker. 🔓 D7 (retry/backoff, `max_attempts`) & D8 (lease) → **P8**; 🔓 D11 (dashboard) → **P10**.
 - 🔓 D16 (repo publik) → **butuh izin eksplisit user**, jangan dikunci otomatis.
 
-## Catatan tersisa untuk user
 1. Mesin dipakai user paralel: jangan sentuh container di luar `surgeline-*`, `crosscheck-tut-*` (8090), `~/infra/`.
 2. Nama field terkunci & cocok di form target, DATA_DICTIONARY, SCHEMA §1:
    `external_ref, full_name, email, policy_no, amount, notes`; `external_ref` = natural key (D4).

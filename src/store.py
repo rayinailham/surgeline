@@ -39,6 +39,18 @@ class Job:
     claimed_at: float
 
 
+def _begin_immediate(conn: sqlite3.Connection, *, retries: int = 5) -> None:
+    """Ambil write lock dengan retry singkat bila worker lain sedang commit."""
+    for attempt in range(retries):
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            return
+        except sqlite3.OperationalError as error:
+            if "database is locked" not in str(error).lower() or attempt == retries - 1:
+                raise
+            time.sleep(0.05 * (attempt + 1))
+
+
 def claim_one(conn: sqlite3.Connection, worker_id: str, *, now: float | None = None) -> Job | None:
     """Klaim satu job `pending` secara atomik; None bila antrean habis.
 
@@ -57,7 +69,7 @@ def claim_one(conn: sqlite3.Connection, worker_id: str, *, now: float | None = N
     berputar selamanya setelah lease-nya dikembalikan (D7/D8).
     """
     stamp = time.time() if now is None else now
-    conn.execute("BEGIN IMMEDIATE")
+    _begin_immediate(conn)
     try:
         row = conn.execute(
             "SELECT external_ref, payload, attempts, status FROM jobs"
@@ -124,7 +136,7 @@ def _finish(
 ) -> None:
     """Lepas job dari `claimed` ke status berikutnya + baris audit, satu transaksi."""
     stamp = time.time() if now is None else now
-    conn.execute("BEGIN IMMEDIATE")
+    _begin_immediate(conn)
     try:
         row = conn.execute(
             "SELECT status, worker_id FROM jobs WHERE external_ref = ?", (external_ref,)

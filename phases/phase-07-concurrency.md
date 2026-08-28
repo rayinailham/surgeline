@@ -43,15 +43,45 @@ uv run --no-sync python -m unittest src.test_concurrency -v
 - `src/run.py`, `src/test_concurrency.py`.
 
 ## Definition of Done
-- [ ] N=4 worker jalan paralel di satu run; selesai tanpa crash `database is locked`.
-- [ ] 0 job sukses oleh >1 worker (query di atas = 0 baris) (A9).
-- [ ] Union job yang diklaim = semua job; irisan antar worker kosong (test).
-- [ ] Throughput kasar N worker dicatat (jadi baseline P12).
-- [ ] `uv run … -m unittest src.test_concurrency` lulus.
-- [ ] **Commit + push berhasil** (D13).
+- [x] N=4 worker jalan paralel di satu run; selesai tanpa crash `database is locked`.
+- [x] 0 job sukses oleh >1 worker (query di atas = 0 baris) (A9).
+- [x] Union job yang diklaim = semua job; irisan antar worker kosong (test).
+- [x] Throughput kasar N worker dicatat (jadi baseline P12).
+- [x] `uv run … -m unittest src.test_concurrency` lulus.
+- [x] **Commit + push berhasil** (D13).
 
 ## Metrik selesai
-`4 worker · 0 double-claim · throughput … job/dtk · N test lulus`
+`4 worker · 0 double-claim · 25,86 job/dtk · 2 test konkurensi lulus`
+
+## Bukti nyata (2026-08-28)
+
+```text
+$ uv run --no-sync python src/run.py --run p07-demo --workers 4 --limit 500
+worker=w-3 ok=124 retryable=1 timeout=0 permanent=0
+worker=w-4 ok=119 retryable=1 timeout=0 permanent=5
+worker=w-1 ok=125 retryable=0 timeout=0 permanent=0
+worker=w-2 ok=121 retryable=1 timeout=0 permanent=3
+workers=4 processed=500 elapsed=19.335s throughput=25.86 job/s return_codes=[0, 0, 0, 0]
+
+$ sqlite3 data/p07-demo/queue.db "<query bukti A9>"
+double_success_multi_worker|0
+ok_jobs|489
+distinct_ok_refs|489
+workers_seen|4
+attempt_rows|500
+duplicate_attempt_refs|0
+
+$ uv run --no-sync python -m unittest src.test_concurrency -v
+Ran 2 tests in 0.041s
+OK
+
+$ uv run --no-sync python -m unittest discover -s src -v
+Ran 75 tests in 0.322s
+OK
+```
+
+Tiga job `pending` dan delapan `failed` adalah chaos target yang disengaja. Batas retry/dead-letter
+baru dikunci di P8; P7 membuktikan 500 klaim paralel dan auditnya, bukan status terminal penuh.
 
 ## Jebakan
 - `SELECT` lalu `UPDATE` di transaksi terpisah = balapan (dua worker ambil job sama). Harus satu
