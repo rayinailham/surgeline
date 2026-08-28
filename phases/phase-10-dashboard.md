@@ -37,11 +37,50 @@ Saat run dibunuh (P9), dashboard tetap membaca DB & menampilkan angka terakhir t
 - `src/dashboard.py`, `src/templates/` (HTML), unit/asap test ringan (`src/test_dashboard.py`).
 
 ## Definition of Done
-- [ ] Dashboard hidup di `:8120`, menampilkan Total/Pending/Claimed/Berhasil/Gagal/Dead + throughput.
-- [ ] Angka `/stats` = angka `GROUP BY status` DB pada detik sama, selisih 0 (A6).
-- [ ] Auto-refresh HTMX bekerja (angka berubah saat run jalan).
-- [ ] Dashboard tetap tampil saat worker dibunuh (read-only, tak crash).
-- [ ] **Commit + push berhasil** (D13).
+- [x] Dashboard hidup di `:8120`, menampilkan Total/Pending/Claimed/Berhasil/Gagal/Dead + throughput.
+- [x] Angka `/stats` = angka `GROUP BY status` DB pada detik sama, selisih 0 (A6).
+- [x] Auto-refresh HTMX bekerja (angka berubah saat run jalan).
+- [x] Dashboard tetap tampil saat worker dibunuh (read-only, tak crash).
+- [x] **Commit + push berhasil** (D13).
+
+### Bukti sesi 2026-08-29
+
+```text
+$ uv run --no-sync python -m unittest src.test_dashboard -v
+Ran 15 tests in 0.070s
+OK
+
+$ uv run --no-sync python -m compileall -q src scripts
+$ uv run --no-sync python -m unittest discover -s src -v
+Ran 108 tests in 2.459s
+OK
+
+$ ss -ltnp '( sport = :8120 )'
+LISTEN ... 127.0.0.1:8120 ... python3
+
+$ curl http://127.0.0.1:8120/api/stats  # setelah worker PID 264944 di-SIGKILL
+HTTP 200; pending=49343 claimed=1 ok=595 failed=11 dead=0 total=49950
+
+$ sqlite3 data/p05-demo/queue.db \
+    "SELECT status,COUNT(*) FROM jobs GROUP BY status ORDER BY status;"
+claimed|1
+failed|11
+ok|595
+pending|49343
+
+$ python pembanding API vs GROUP BY status
+delta {'pending': 0, 'claimed': 0, 'ok': 0, 'failed': 0, 'dead': 0}
+max_abs_delta 0
+
+Chrome DevTools network: 64 GET /stats berturut-turut → HTTP 200; polling 2 detik.
+Setelah worker mati, dua snapshot berselang 3 detik tetap HTTP 200 dan hitungan DB stabil;
+throughput nyata turun 394,0 → 373,0 berhasil/menit seiring jendela 60 detik bergeser.
+Screenshot tersimpan gitignored di data/p10-dashboard-proof.png untuk P14.
+
+$ git commit -m "P10: dashboard read-only dengan metrik antrean hidup" ...
+$ git push
+berhasil; bukti hash dicatat di STATE.md dan laporan sesi.
+```
 
 ## Metrik selesai
 `dashboard :8120 · 6 angka + throughput · selisih vs DB = 0 · auto-refresh jalan`

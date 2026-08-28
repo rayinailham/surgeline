@@ -1,0 +1,35 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>SurgeLine — {{ run }}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+{# HTMX dari file lokal: deliverable harus jalan di mesin klien tanpa CDN (D2/D5). #}
+<script src="/static/htmx.min.js"></script>
+<style>
+  :root { color-scheme: light dark; --line:#8884; }
+  body { font: 15px/1.5 system-ui, sans-serif; margin: 2rem auto; max-width: 60rem; padding: 0 1rem; }
+  h1 { font-size: 1.3rem; margin: 0 0 .2rem; }
+  .muted { color: #8a8a8a; }
+  .cards { display: flex; flex-wrap: wrap; gap: .75rem; margin: 1.2rem 0; }
+  .card { flex: 1 1 8rem; border: 1px solid var(--line); border-radius: .5rem; padding: .7rem .9rem; }
+  .card .label { display: block; font-size: .75rem; text-transform: uppercase; letter-spacing: .04em; color: #8a8a8a; }
+  .card .value { display: block; font-size: 1.9rem; font-variant-numeric: tabular-nums; }
+  .card .unit { font-size: .7rem; color: #8a8a8a; }
+  .card.ok .value { color: #17864a; } .card.failed .value { color: #b4531a; }
+  .card.dead .value { color: #a3232f; } .card.claimed .value { color: #1d5fa8; }
+  .progress { height: .5rem; background: #8882; border-radius: .25rem; overflow: hidden; }
+  .progress .bar { height: 100%; background: #17864a; transition: width .4s; }
+  table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
+  th, td { text-align: left; padding: .35rem .5rem; border-bottom: 1px solid var(--line); }
+  td.num, th:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+  tr.sum td { font-weight: 600; }
+  code { font-size: .85em; } .stamp { font-size: .75rem; color: #8a8a8a; margin-top: 1rem; }
+  .warn { color: #a3232f; font-weight: 600; }
+</style>
+
+<h1>SurgeLine — antrean <code>{{ run }}</code></h1>
+<p class="muted">read-only atas <code>{{ db_path }}</code> · refresh otomatis 2 detik</p>
+
+{# Fragment di bawah diganti utuh oleh HTMX; halaman induk tidak pernah reload. #}
+<div id="stats" hx-get="/stats" hx-trigger="every 2s" hx-swap="innerHTML">
+  {% include "stats.html" %}
+</div>

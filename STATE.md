@@ -3,10 +3,10 @@
 > File hidup. Dibaca di awal tiap sesi, ditulis ulang di akhir tiap sesi.
 > Satu-satunya memori antar sesi agent. Jaga tetap pendek (< 100 baris).
 
-**Terakhir diperbarui:** 2026-08-28 (sesi remediasi R1)
-**Status project:** 🟨 **JALAN** — 10/15 fase selesai, acceptance 5/12
-**Fase aktif:** — (R1 selesai & ter-push; gerbang kesehatan hijau lagi)
-**Fase berikutnya:** **P10 — Dashboard** (FastAPI+HTMX `:8120`, angka hidup cocok DB)
+**Terakhir diperbarui:** 2026-08-29 (sesi P10)
+**Status project:** 🟨 **JALAN** — 11/15 fase selesai, acceptance 6/12
+**Fase aktif:** — (P10 selesai & ter-push; gerbang kesehatan hijau)
+**Fase berikutnya:** **P11 — Run Penuh 50k** (chaos + ≥2 kill, status akhir bersih, 0 dup)
 
 ---
 ## Status fase
@@ -23,7 +23,7 @@
 | P7 Konkurensi | ✅ selesai | commit `P07`; 4 worker, 500 klaim, 0 double-success, 25,86 job/dtk; 2 test konkurensi |
 | P8 Ketahanan | ✅ selesai | commit `P08`; chaos 100: ok 80 / failed 10 / dead 10 (semua ber-`last_error`); kill -9 → lease → ok |
 | P9 Bukti Crash-Recovery | ✅ selesai | commit `P09`; 3k chaos, kill -9 2×, ok 423→804→2.907, 8 yatim pulih, 0 dup |
-| P10 Dashboard | ⬜ belum | FastAPI+HTMX `:8120`, angka hidup cocok DB |
+| P10 Dashboard | ✅ selesai | commit `P10`; read-only :8120, HTMX 2 dtk, 6 angka + throughput, selisih DB=0 |
 | P11 Run Penuh 50k | ⬜ belum | 50k + chaos + ≥2 kill → status akhir bersih, 0 dup |
 | P12 Throughput | ⬜ belum | record/jam per N worker → ekstrapolasi 6 juta record |
 | P13 Laporan + Konsultasi | ⬜ belum | `REPORT.xlsx`, digest 0 jargon, `docs/CONSULTATION.md` |
@@ -48,6 +48,7 @@ Legenda: ⬜ belum · 🟨 jalan · ✅ selesai · 🟥 blocked
   yatim), `src/recover.py` CLI; `src/test_resilience.py` 16 test. D7/D8 **dikunci**:
   `MAX_ATTEMPTS=5`, base 1 dtk ×2 (atap 30 dtk), jitter 0-25%, `LEASE_TIMEOUT_SECONDS=120`
 - **P9:** `docs/RESUME_PROOF.md`; chaos 3.000 job, 2× kill paksa, 8 klaim yatim disapu lease; rekaman → P14.
+- **P10:** `src/dashboard.py`, template+HTMX lokal, koneksi SQLite `mode=ro`, 15 test; screenshot gitignored → P14.
 - **R1:** perbaikan flaky test kontrak target (lihat §Temuan); 2 test regresi baru.
 - Repo privat `github.com/rayinailham/surgeline`; kolom commit memakai subjek (`PNN`), bukan hash.
 
@@ -72,23 +73,18 @@ Legenda: ⬜ belum · 🟨 jalan · ✅ selesai · 🟥 blocked
 | Nomor konfirmasi tersimpan tiap sukses | 100% | 195/195 (batch 200) + 80/80 (chaos P8) + 20/20 (gangguan sementara); 0 `ok` tanpa konfirmasi, 0 duplikat konfirmasi |
 | Antrean WAL aktif | `journal_mode=wal` | ✅ persisten di file, terbaca proses lain (sqlite3 CLI) |
 | Klaim paralel | 0 double-claim | 4 worker, 500 attempts; 489 ok = 489 ref unik; 0 sukses oleh >1 worker |
-| Dashboard vs DB | selisih 0 | — |
+| Dashboard vs DB | selisih 0 | :8120 read-only; total 49.950 = pending 49.343 + claimed 1 + ok 595 + failed 11 + dead 0; max selisih 0; 64 poll HTTP 200 |
 | Throughput | terukur | 25,86 job/dtk @4 worker (500 attempts / 19,335 dtk; baseline P12) |
 | Memori generator / loader | datar | gen 10k=49.956/50k=50.008 KiB; loader 10k=50.600/50k=57.044 KiB (+12,74%) |
-| Unit test hijau | selalu | 93/93 OK; `test_target_contract` 40 run berturut, gagal=0 (R1) |
-| Acceptance project | 12/12 | 5/12 (A2/A3 dedup+resume, A4 retry/dead-letter, A9 klaim atomik, A10 lease recovery) |
+| Unit test hijau | selalu | 108/108 OK; 15 test dashboard OK; `test_target_contract` 40 run berturut, gagal=0 (R1) |
+| Acceptance project | 12/12 | 6/12 (+A6 dashboard=DB; A2/A3 dedup+resume, A4 retry/dead-letter, A9 klaim atomik, A10 lease recovery) |
 
 ## Temuan audit (ditutup)
-- **R1 (2026-08-28, ditutup):** `test_target_contract.py` menarik `external_ref` acak
-  (`uuid4`) padahal chaos deterministik atas `external_ref` (D3) → **1.051/20.000 = 5,25%**
-  ref kena chaos; 2 test terdampak ≈10% run gerbang merah, menyamar sebagai regresi target.
-  Fix: `_honest_ref()` menarik ref sampai `target.app._chaos_mode` (fungsi milik target;
-  seed+rate dari `/health` container) bilang bebas chaos. Regresi anti-drift:
-  `test_honest_ref_selalu_bebas_chaos` + `test_prediksi_chaos_cocok_dengan_target_hidup`
-  (3 mode dibalas 500/422/200 + header `X-SurgeLine-Chaos`). Target tidak disentuh (D3).
+- **R1:** flaky kontrak akibat ref acak kena chaos deterministik (1.051/20.000 = 5,25%);
+  `_honest_ref()` + 2 regresi anti-drift menutupnya tanpa mengubah target D3.
 
 ## Blocker & keputusan masih 🔓
-- Tidak ada blocker. D7 & D8 **terkunci di P8**. 🔓 D11 (dashboard) → **P10**.
+- Tidak ada blocker. D7 & D8 terkunci di P8; D11 terkunci di P10.
 - 🔓 D16 (repo publik) → **butuh izin eksplisit user**, jangan dikunci otomatis.
 
 1. Mesin dipakai paralel: jangan sentuh container di luar `surgeline-*`; `crosscheck-tut-*` (8090) & `~/infra/` haram.

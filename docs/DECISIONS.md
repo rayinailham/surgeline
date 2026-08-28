@@ -76,10 +76,14 @@ hemat memori) **dan** CSV. Data 100% sintetis (Faker/seed lokal), tanpa PII nyat
 tidak pernah menahan 50k baris di memori sekaligus. Bukti hemat memori dibuktikan di P3 & P5
 (RSS datar, bukan naik linear terhadap jumlah baris).
 
-## D11 — Dashboard FastAPI + HTMX 🔓 (P10)
+## D11 — Dashboard FastAPI + HTMX 🔒 (dikunci P10)
 Satu halaman, read-only atas `queue.db`, auto-refresh (HTMX polling). Menampilkan
 Total · Pending · Claimed · Berhasil · Gagal · Dead · throughput berjalan. Tanpa auth
-(localhost). Angka wajib cocok 1:1 dengan query DB (dibuktikan di P10).
+(localhost). Angka wajib cocok 1:1 dengan query DB (dibuktikan di P10). Implementasi
+memakai koneksi SQLite URI `mode=ro`, polling 2 detik, throughput sukses per menit dari
+audit `attempts` dalam jendela 60 detik, dan bind tetap `127.0.0.1:8120` tanpa opsi
+`0.0.0.0`. Dipilih agar dashboard tidak dapat menulis antrean, tetap mandiri dari worker,
+menunjukkan laju nyata setelah restart, dan tidak mengekspos dashboard tanpa auth ke jaringan.
 
 ## D12 — Worker = Playwright headless Chromium 🔒
 Worker mengisi form seperti manusia (Playwright headless), bukan `httpx` POST langsung —

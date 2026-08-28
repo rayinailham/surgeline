@@ -1,0 +1,45 @@
+{# Fragment yang diganti HTMX tiap 2 detik. Angka di sini datang dari
+   store.counts() (GROUP BY status) dan tabel audit `attempts` — tidak ada
+   penghitung di memori proses dashboard (A6). #}
+{% if error %}
+  <p class="warn">⚠ {{ error }}</p>
+  <p class="muted">Dashboard read-only; halaman tetap hidup dan mencoba lagi tiap 2 detik.</p>
+{% else %}
+  <div class="cards">
+    <div class="card total">
+      <span class="label">Total</span>
+      <span class="value">{{ snapshot.total }}</span>
+    </div>
+    {% for status, label in labels %}
+      <div class="card {{ status }}">
+        <span class="label">{{ label }}</span>
+        <span class="value">{{ snapshot.counts[status] }}</span>
+      </div>
+    {% endfor %}
+    <div class="card rate">
+      <span class="label">Throughput</span>
+      <span class="value">{{ '%.1f'|format(snapshot.ok_per_min) }}</span>
+      <span class="unit">berhasil / menit ({{ snapshot.window_seconds|int }} dtk terakhir)</span>
+    </div>
+  </div>
+
+  <div class="progress" role="progressbar" aria-valuenow="{{ snapshot.percent_done|round(1) }}"
+       aria-valuemin="0" aria-valuemax="100">
+    <div class="bar" style="width: {{ snapshot.percent_done }}%"></div>
+  </div>
+  <p class="muted">
+    selesai {{ snapshot.done }} / {{ snapshot.total }}
+    ({{ '%.1f'|format(snapshot.percent_done) }}%) · sisa {{ snapshot.remaining }}
+  </p>
+
+  <table>
+    <thead><tr><th>Status</th><th>Job</th></tr></thead>
+    <tbody>
+      {% for status, label in labels %}
+        <tr><td>{{ label }} <code>{{ status }}</code></td><td class="num">{{ snapshot.counts[status] }}</td></tr>
+      {% endfor %}
+      <tr class="sum"><td>Total</td><td class="num">{{ snapshot.total }}</td></tr>
+    </tbody>
+  </table>
+{% endif %}
+<p class="stamp">diperbarui {{ (snapshot.generated_at if snapshot else 0)|int }} · <code>{{ db_path }}</code></p>

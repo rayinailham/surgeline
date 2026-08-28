@@ -192,7 +192,9 @@ Aturan wajib:
 ## 6. Pragma koneksi (D5)
 
 Diterapkan `src/schema.py:connect()` untuk **setiap** koneksi, termasuk milik worker dan
-dashboard yang membuka DB yang sudah ada:
+dashboard yang membuka DB yang sudah ada. Dashboard P10 memakai `read_only=True` (URI
+`mode=ro`) dan melewati penetapan `journal_mode` karena itu operasi tulis; mode WAL yang
+sudah persisten tetap terbaca:
 
 | Pragma | Nilai | Alasan |
 |---|---|---|

@@ -16,6 +16,7 @@ from __future__ import annotations
 import sqlite3
 import time
 from pathlib import Path
+from urllib.parse import quote
 
 SCHEMA_VERSION = 1
 
@@ -135,16 +136,28 @@ class SchemaError(RuntimeError):
     """Pelanggaran kontrak skema yang terdeteksi sebelum menyentuh DB."""
 
 
-def connect(path: str | Path) -> sqlite3.Connection:
+def connect(path: str | Path, *, read_only: bool = False) -> sqlite3.Connection:
     """Buka koneksi antrean dengan pragma wajib (D5).
 
     Dipakai baik oleh `init_db` maupun oleh proses lain (worker, dashboard) yang
     membuka DB yang sudah ada. `journal_mode` bersifat persisten di file, tapi
     `busy_timeout` dan `foreign_keys` per-koneksi, jadi harus diset di tiap proses.
+
+    `read_only=True` (dipakai dashboard P10) membuka DB lewat URI `mode=ro`: SQLite
+    sendiri yang menolak setiap penulisan, jadi pembaca tidak bisa merebut kunci
+    penulis dari worker yang sedang berjalan walau ada bug di kode pemanggil.
+    `PRAGMA journal_mode=WAL` dilewati untuk koneksi ini — mengganti journal mode
+    adalah operasi tulis, dan file-nya memang sudah WAL sejak `init_db`.
     """
-    conn = sqlite3.connect(str(path), isolation_level=None)
+    if read_only:
+        uri = f"file:{quote(str(Path(path).resolve()))}?mode=ro"
+        conn = sqlite3.connect(uri, uri=True, isolation_level=None)
+    else:
+        conn = sqlite3.connect(str(path), isolation_level=None)
     conn.row_factory = sqlite3.Row
     for pragma in _PRAGMAS:
+        if read_only and "journal_mode" in pragma:
+            continue
         conn.execute(pragma)
     return conn
 
