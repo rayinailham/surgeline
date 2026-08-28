@@ -63,7 +63,7 @@ Mock/stub halaman hasil (HTML fixture): parser menemukan nomor konfirmasi; 500�
 - [x] 500/timeout → job kembali `pending`; 422 validasi → `failed` dgn `last_error`.
 - [x] `claim_one` atomik (`BEGIN IMMEDIATE`) — dasar untuk P7.
 - [x] `uv run … -m unittest src.test_worker` lulus (pakai fixture, bukan jaringan).
-- [ ] **Commit + push berhasil** (D13).
+- [x] **Commit + push berhasil** (D13) — `28f3ecb`, `0d3b51d..28f3ecb main -> main`.
 
 ## Metrik selesai
 `subset 200 diproses · ok=195 semuanya berkonfirmasi · permanent=5 · subset chaos 24:
