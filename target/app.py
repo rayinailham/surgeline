@@ -3,8 +3,7 @@
 Ini BUKAN bagian dari pipeline deliverable. Ia mensimulasikan platform pihak ketiga
 tanpa API: form HTML, validasi server-side, halaman hasil bernomor konfirmasi (D6).
 
-P1 = perilaku jujur (0% kegagalan buatan). Chaos (D3) diaktifkan di P2 lewat
-SURGELINE_CHAOS_RATE / SURGELINE_CHAOS_SEED yang sudah dibaca di sini.
+Chaos deterministik (D3) dikendalikan lewat SURGELINE_CHAOS_RATE/SEED.
 """
 
 from __future__ import annotations
@@ -15,6 +14,7 @@ import os
 import re
 import sqlite3
 import threading
+import time
 from collections.abc import Iterator
 from datetime import datetime, timezone
 
@@ -22,8 +22,14 @@ from fastapi import FastAPI, Form
 from fastapi.responses import HTMLResponse, JSONResponse
 
 DB_PATH = os.environ.get("SURGELINE_TARGET_DB", "/app/state/target.db")
-CHAOS_RATE = float(os.environ.get("SURGELINE_CHAOS_RATE", "0.0"))
+CHAOS_RATE = float(os.environ.get("SURGELINE_CHAOS_RATE", "0.05"))
 CHAOS_SEED = os.environ.get("SURGELINE_CHAOS_SEED", "1337")
+CHAOS_DELAY_SECONDS = float(os.environ.get("SURGELINE_CHAOS_DELAY_SECONDS", "2.0"))
+
+if not 0.0 <= CHAOS_RATE <= 1.0:
+    raise ValueError("SURGELINE_CHAOS_RATE harus antara 0.0 dan 1.0")
+if CHAOS_DELAY_SECONDS < 0.0:
+    raise ValueError("SURGELINE_CHAOS_DELAY_SECONDS tidak boleh negatif")
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s.]+(\.[^@\s.]+)+$")
 REF_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
@@ -141,6 +147,16 @@ def _validate(values: dict[str, str]) -> list[str]:
     return errors
 
 
+def _chaos_mode(
+    external_ref: str, *, rate: float = CHAOS_RATE, seed: str = CHAOS_SEED
+) -> str | None:
+    """Nasib reproducible dari sha256(seed + external_ref), atau None bila jujur."""
+    value = int.from_bytes(hashlib.sha256(f"{seed}{external_ref}".encode()).digest(), "big")
+    if value % 1_000_000 / 1_000_000 >= rate:
+        return None
+    return ("server_error", "slow", "validation")[value % 3]
+
+
 PAGE = """<!doctype html>
 <html lang="id"><head><meta charset="utf-8">
 <title>{title}</title>
@@ -225,6 +241,25 @@ def submit(
         return HTMLResponse(_form_page(errors), status_code=422)
 
     ref = values.pop("external_ref")
+    chaos_mode = _chaos_mode(ref)
+    if chaos_mode == "server_error":
+        return HTMLResponse(
+            PAGE.format(
+                title="Gangguan Server",
+                body='<div class="err" id="error">Gangguan server sementara.</div>',
+            ),
+            status_code=500,
+            headers={"X-SurgeLine-Chaos": chaos_mode},
+        )
+    if chaos_mode == "validation":
+        return HTMLResponse(
+            _form_page(["record ditolak oleh chaos target"]),
+            status_code=422,
+            headers={"X-SurgeLine-Chaos": chaos_mode},
+        )
+    if chaos_mode == "slow":
+        time.sleep(CHAOS_DELAY_SECONDS)
+
     confirmation, created = _store(ref, values)
 
     body = (
@@ -236,4 +271,5 @@ def submit(
         '<p><a id="back" href="/">Kirim pengajuan lain</a></p>'
     ).format(created="1" if created else "0", conf=confirmation, ref=html.escape(ref))
 
-    return HTMLResponse(PAGE.format(title="Pengajuan Diterima", body=body))
+    headers = {"X-SurgeLine-Chaos": chaos_mode} if chaos_mode else None
+    return HTMLResponse(PAGE.format(title="Pengajuan Diterima", body=body), headers=headers)

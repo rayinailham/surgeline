@@ -42,13 +42,31 @@ make target-oracles     # harus PASS semua, exit 0
 - `target/app.py` (chaos), `docs/CHAOS.md`, `scripts/target_oracles.py`, target `make target-oracles`.
 
 ## Definition of Done
-- [ ] Chaos aktif saat `rate>0`, mati saat `rate=0`; deterministik terhadap seed+external_ref.
-- [ ] 3 mode gagal (500 / lambat / validasi) terbukti muncul.
-- [ ] Proporsi gagal ≈ 5% pada N≥2.000 (angka nyata dicatat).
-- [ ] Reproducible: 2 run seed sama → set external_ref gagal identik (diff kosong).
-- [ ] `docs/CHAOS.md` mengunci rate, mode, retryable/permanen, env penyetel.
-- [ ] `make target-oracles` PASS, exit 0.
-- [ ] **Commit + push berhasil** (D13).
+- [x] Chaos aktif saat `rate>0`, mati saat `rate=0`; deterministik terhadap seed+external_ref.
+- [x] 3 mode gagal (500 / lambat / validasi) terbukti muncul.
+- [x] Proporsi gagal ≈ 5% pada N≥2.000 (angka nyata dicatat).
+- [x] Reproducible: 2 run seed sama → set external_ref gagal identik (diff kosong).
+- [x] `docs/CHAOS.md` mengunci rate, mode, retryable/permanen, env penyetel.
+- [x] `make target-oracles` PASS, exit 0.
+- [x] **Commit + push berhasil** (D13).
+
+## Bukti nyata (2026-08-28)
+
+```text
+$ make target-oracles
+run 1: N=2000 marked=112 rate=5.60% server_error=38 slow=39 validation=35 normal=1888
+run 2: N=2000 marked=112 rate=5.60% server_error=38 slow=39 validation=35 normal=1888
+reproducible: 112 external_ref chaos identik; diff=0
+target-oracles: PASS
+exit 0
+
+$ curl -sS http://127.0.0.1:8110/health
+{"status":"ok","chaos_rate":0.05,"chaos_seed":"1337"}
+
+$ make test
+Ran 10 tests in 0.352s
+OK
+```
 
 ## Metrik selesai
 `rate≈5% pada N=… · 3 mode muncul · 2 run seed sama identik · target-oracles PASS`

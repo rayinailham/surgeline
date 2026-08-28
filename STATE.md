@@ -4,9 +4,9 @@
 > Satu-satunya memori antar sesi agent. Jaga tetap pendek (< 100 baris).
 
 **Terakhir diperbarui:** 2026-08-28
-**Status project:** 🟨 **JALAN** — 2/15 fase selesai, acceptance 0/12
-**Fase aktif:** — (P1 selesai & ter-push)
-**Fase berikutnya:** **P2 — Chaos & Kontrak Target** (5% gagal deterministik, oracle, `docs/CHAOS.md`)
+**Status project:** 🟨 **JALAN** — 3/15 fase selesai, acceptance 0/12
+**Fase aktif:** — (P2 selesai & ter-push)
+**Fase berikutnya:** **P3 — Generator Data** (50.000 record Excel+CSV streamed)
 
 ---
 ## Status fase
@@ -15,7 +15,7 @@
 |---|---|---|
 | P0 Bootstrap | ✅ selesai | commit `2409499`; uv+Makefile+env-check.md+smoke test; repo privat dibuat & di-push |
 | P1 Target App | ✅ selesai | commit `P01`; `surgeline-target` :8110 healthy, form 6 field, `SL-<8hex>` idempoten, 0 duplikat @600 req |
-| P2 Chaos & Kontrak Target | ⬜ belum | 5% gagal deterministik (500/lambat/validasi), oracle target, `docs/CHAOS.md` |
+| P2 Chaos & Kontrak Target | ✅ selesai | commit `P02`; 112/2.000 = 5,60%, mode 38/39/35, 2 run diff=0, oracle PASS |
 | P3 Generator Data | ⬜ belum | 50.000 record Excel+CSV, streamed, `docs/DATA_DICTIONARY.md` |
 | P4 Kontrak Data & Skema | ⬜ belum | `docs/SCHEMA.md` terkunci: record + tabel `jobs`/`attempts`, `UNIQUE`, state machine |
 | P5 Loader | ⬜ belum | `src/load.py` stream → antrean, dedup DB, memori datar, unit test |
@@ -40,6 +40,8 @@ Legenda: ⬜ belum · 🟨 jalan · ✅ selesai · 🟥 blocked
   `target/requirements.txt` (ter-pin), `docker-compose.yml` di root (container `surgeline-target`)
 - **P1:** `docs/TARGET.md` terisi — endpoint, 6 field + aturan validasi, tabel selector kontrak (D6)
 - **P1:** `src/tests/test_target_contract.py` — 5 test (skip otomatis kalau `:8110` mati)
+- **P2:** chaos hash deterministik tiga mode di target; `docs/CHAOS.md` mengunci kontrak worker P8
+- **P2:** `scripts/target_oracles.py` + `make target-oracles`; dua target segar × 2.000 request
 - Repo privat `github.com/rayinailham/surgeline`, `origin/main` = commit `P01` (P0 = `2409499`)
   Sebuah commit tidak bisa memuat hash-nya sendiri, jadi mulai P1 kolom commit memakai
   **subjek** (`PNN`), bukan hash. Hash dilihat dengan `git log --oneline`.
@@ -60,6 +62,7 @@ Legenda: ⬜ belum · 🟨 jalan · ✅ selesai · 🟥 blocked
 |---|---|---|
 | Target app hidup | :8110 healthy | ✅ `surgeline-target` Up (healthy) |
 | Target: konfirmasi idempoten per `external_ref` | identik | ✅ 600 req / 300 ref / 32 thread → 303 baris, 303 konfirmasi unik, 0 duplikat |
+| Chaos deterministik | ≈5%, 3 mode, 2 run identik | 112/2.000 = 5,60%; 500=38, lambat=39, validasi=35; diff=0 |
 | Record diproses | 50.000 | — |
 | Duplikat (external_ref & confirmation) | 0 | — |
 | Kill -9 saat run → tetap selesai | ≥2× | — |
@@ -68,7 +71,7 @@ Legenda: ⬜ belum · 🟨 jalan · ✅ selesai · 🟥 blocked
 | Dashboard vs DB | selisih 0 | — |
 | Throughput | terukur | — |
 | Memori loader | datar | — |
-| Unit test hijau | selalu | 8/8 OK |
+| Unit test hijau | selalu | 10/10 OK |
 | Acceptance project | 12/12 | 0/12 |
 
 ## Blocker & keputusan masih 🔓
@@ -83,7 +86,7 @@ Legenda: ⬜ belum · 🟨 jalan · ✅ selesai · 🟥 blocked
    setelah push berhasil. Mulai P1: update DoD & STATE **sebelum** commit → kembali 1 fase = 1 commit.
 3. Mesin dipakai user paralel: jangan restart container di luar `surgeline-*`, jangan sentuh
    `crosscheck-tut-*` (8090) dan `/home/rayin/infra/`.
-4. P1: form target punya **6** field — `external_ref` ditambahkan sebagai natural key (D4),
+4. Form target punya **6** field — `external_ref` ditambahkan sebagai natural key (D4),
    karena tanpa kunci itu idempotensi nomor konfirmasi tidak bisa dibuktikan. P4 (`docs/SCHEMA.md`)
    harus memakai nama field yang sama persis: `external_ref, full_name, email, policy_no, amount, notes`.
 5. State target = SQLite **di dalam container**. `make target-down` (= `docker compose down`)

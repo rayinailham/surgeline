@@ -6,6 +6,7 @@ services:
     container_name: surgeline-target
     ports: ["127.0.0.1:8110:8080"]
     environment:
-      SURGELINE_CHAOS_RATE: "0.0"      # P1 tanpa chaos; chaos diaktifkan di P2 (D3)
-      SURGELINE_CHAOS_SEED: "1337"
+      SURGELINE_CHAOS_RATE: "${SURGELINE_CHAOS_RATE:-0.05}"
+      SURGELINE_CHAOS_SEED: "${SURGELINE_CHAOS_SEED:-1337}"
+      SURGELINE_CHAOS_DELAY_SECONDS: "${SURGELINE_CHAOS_DELAY_SECONDS:-2.0}"
     restart: unless-stopped

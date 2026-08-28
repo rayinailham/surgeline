@@ -37,7 +37,7 @@ mulai dari nol). `docker compose restart` mempertahankan state.
 | `GET` | `/` | 200 HTML | Halaman form, 6 field |
 | `POST` | `/submit` | 200 HTML | Halaman hasil bernomor konfirmasi |
 | `POST` | `/submit` | **422** HTML | Ditolak validasi, daftar pesan error |
-| `GET` | `/health` | 200 JSON | `{"status":"ok","chaos_rate":0.0,"chaos_seed":"1337"}` |
+| `GET` | `/health` | 200 JSON | `{"status":"ok","chaos_rate":0.05,"chaos_seed":"1337"}` (default) |
 
 `/docs` dan `/redoc` dimatikan — target berpura-pura tidak punya API.
 
@@ -84,12 +84,13 @@ Submission dianggap **gagal** bila nomor konfirmasi tidak berhasil ditangkap (D6
   field lain pada submit kedua **diabaikan** — baris pertama yang menang.
   Inilah yang membuat "0 duplikat" tetap terbukti walau worker resume setelah crash.
 
-## 6. Chaos (D3) — belum aktif di P1
+## 6. Chaos (D3)
 
-`docker-compose.yml` sudah menyetel `SURGELINE_CHAOS_RATE=0.0` dan `SURGELINE_CHAOS_SEED=1337`,
-dan app sudah membacanya (terlihat di `/health`). **P1 sengaja 100% jujur** supaya P2 bisa
-mengukur selisihnya. Mode kegagalan (HTTP 500 / respons lambat / tolak validasi palsu),
-pembagiannya, dan rumus deterministiknya dikunci di `docs/CHAOS.md` pada P2.
+Default target sejak P2 adalah `SURGELINE_CHAOS_RATE=0.05`, seed `1337`, dan delay 2 detik.
+Set `SURGELINE_CHAOS_RATE=0.0` untuk mematikan chaos. Nasib tiap record ditentukan oleh
+`sha256(seed + external_ref)`, sehingga reproducible dan tidak bergantung urutan submit.
+Kontrak tiga mode (HTTP 500 / respons lambat / tolak validasi), pembagian, retryability,
+dan oracle dikunci lengkap di `docs/CHAOS.md`.
 
 Kegagalan target adalah **fitur uji**, bukan bug. Dilarang "memperbaiki" target agar
 berhenti gagal (AGENTS §3).

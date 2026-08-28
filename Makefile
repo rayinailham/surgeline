@@ -6,7 +6,7 @@ PYTHON  := $(UV) python
 
 .DEFAULT_GOAL := help
 
-.PHONY: help env test audit target-up target-down
+.PHONY: help env test audit target-up target-down target-oracles
 
 help:  ## Daftar target yang tersedia
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -45,3 +45,6 @@ target-up:  ## Nyalakan target app :8110 (docker-compose.yml project, D2/D9)
 
 target-down:  ## Matikan target app (container + state target ikut hilang)
 	docker compose down
+
+target-oracles:  ## Buktikan chaos 5% deterministik pada dua target segar (P2)
+	$(PYTHON) scripts/target_oracles.py
