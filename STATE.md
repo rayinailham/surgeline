@@ -32,15 +32,11 @@
 Legenda: ⬜ belum · 🟨 jalan · ✅ selesai · 🟥 blocked
 
 ## Artefak yang sudah lahir
-- **P0:** `pyproject.toml`/`uv.lock`/`.python-version` (3.13), `env-check.md`, `Makefile`
-  (`help env test audit target-up target-down target-oracles`), `src/tests/test_smoke.py` 3 test
-- **P1:** `target/` (FastAPI form + validasi + nomor konfirmasi, Dockerfile, requirements ter-pin),
-  `docker-compose.yml` root; `docs/TARGET.md` (endpoint, 6 field, selector kontrak D6);
-  `src/tests/test_target_contract.py` 5 test (skip otomatis kalau `:8110` mati)
-- **P2:** chaos hash tiga mode di target + `docs/CHAOS.md`; `scripts/target_oracles.py`
-  + `make target-oracles` (dua target segar × 2.000 request)
-- **P3:** `scripts/gen_data.py` CSV+XLSX write-only deterministik (50k, seed 42),
-  `docs/DATA_DICTIONARY.md`, 2 test regresi; data hasil tetap gitignored
+- **P0:** `pyproject.toml`/`uv.lock`/`.python-version` (3.13), `env-check.md`, `Makefile`, 3 smoke test
+- **P1:** `target/` (FastAPI form + validasi + konfirmasi, Dockerfile), `docker-compose.yml` root,
+  `docs/TARGET.md` (selector kontrak D6), `test_target_contract.py` 5 test (skip kalau `:8110` mati)
+- **P2:** chaos hash tiga mode di target + `docs/CHAOS.md`; `scripts/target_oracles.py` + `make target-oracles`
+- **P3:** `scripts/gen_data.py` CSV+XLSX write-only (50k, seed 42), `docs/DATA_DICTIONARY.md`, 2 test
 - **P4:** `src/schema.py` (WAL+busy_timeout, `assert_transition`, `status_counts`),
   `src/tests/test_schema.py` 24 test, `docs/SCHEMA.md` **terkunci** (`SCHEMA_VERSION=1`)
 - **P5:** `src/load.py` stream CSV/XLSX + validasi sebelum `INSERT OR IGNORE`;
@@ -48,9 +44,6 @@ Legenda: ⬜ belum · 🟨 jalan · ✅ selesai · 🟥 blocked
 - **P6:** `src/store.py` (`claim_one` `BEGIN IMMEDIATE`, `mark_ok`/`mark_failed`/`release`,
   transisi + baris audit dalam satu transaksi), `src/worker.py` (Chromium headless, parser
   halaman hasil, pagar target lokal D14), `src/test_worker.py` 30 test dgn fixture HTML
-- **P6 perbaikan:** klaim `pending` diurut `updated_at` + index `idx_jobs_status_updated_at`
-  (sebelumnya `rowid` → 1 job gagal memakan 24 percobaan, 23 job lain tak tersentuh);
-  `docs/SCHEMA.md` §3 & `src/schema.py` diperbarui bersama, `SCHEMA_VERSION` tetap 1
 - **P7:** `src/run.py` runner N proses + pembagian limit; retry singkat write lock di `src/store.py`;
   `src/test_concurrency.py` membuktikan union 500 job, irisan worker kosong, dan retry lock
 - **P8:** `store.READY_AT` (backoff eksponensial + jitter deterministik, tanpa kolom baru),
@@ -59,10 +52,9 @@ Legenda: ⬜ belum · 🟨 jalan · ✅ selesai · 🟥 blocked
   `src/recover.py` CLI, worker menunggu backoff & menyapu lease berkala;
   `src/test_resilience.py` 16 test. D7/D8 **dikunci**: `MAX_ATTEMPTS=5`, base 1 dtk ×2
   (atap 30 dtk), jitter 0-25%, `LEASE_TIMEOUT_SECONDS=120`
-- **P8 koreksi dokumen:** `phases/phase-08` minta kolom `not_before` — bertentangan dengan
-  `docs/SCHEMA.md` §3 (SCHEMA menang, AGENTS §5); file fase diperbaiki di sesi yang sama
-- Repo privat `github.com/rayinailham/surgeline`, `origin/main` = commit `P07`. Kolom commit
-  memakai **subjek** (`PNN`), bukan hash — sebuah commit tidak bisa memuat hash-nya sendiri.
+- Repo privat `github.com/rayinailham/surgeline`, `origin/main` = commit `P08` (`ff19f68`).
+  Kolom commit memakai **subjek** (`PNN`), bukan hash — sebuah commit tidak bisa memuat
+  hash-nya sendiri.
 
 ## Fakta terverifikasi tentang mesin ini (P0, 2026-08-28)
 - Python project **3.13.13** · Docker/Compose/ffmpeg/Make/sqlite3 CLI ada · port project `8110`/`8120`.
