@@ -86,6 +86,22 @@ yang sama dan memonopoli run — terukur di P6: 24 percobaan berturut-turut jatu
 `external_ref` dan 23 job lain tidak tersentuh. Ini prasyarat backoff D7 di P8, yang
 menghitung kelayakan retry dari `updated_at` + `attempts` (bukan kolom baru).
 
+**Kelayakan retry (dikunci P8, D7).** Job `pending` baru boleh diklaim setelah
+
+```text
+READY_AT = updated_at + backoff(attempts) * (1 + (rowid % 100)/100 * 0.25)
+backoff(a) = min(1.0 * 2^(a-1), 30.0)   # a = attempts terpakai; backoff(0) = 0
+```
+
+Angka terkunci: `MAX_ATTEMPTS = 5`, base 1 dtk, faktor 2, atap 30 dtk, jitter 0–25%.
+Tangga penundaannya: 1 · 2 · 4 · 8 · 16 detik. Ekspresi SQL-nya dibangkitkan
+`src/store.py:_ready_at_sql()` dari `schema.backoff_delay()` yang sama, supaya angka
+Python dan angka SQL tidak bisa berbeda diam-diam. Jitter memakai `rowid % 100`:
+deterministik per job (run tetap bisa diulang, D3) tapi job yang dilepas pada detik yang
+sama tidak jadi layak serentak. `claim_one` **melewati** job yang belum layak, bukan
+mengembalikan None — satu job yang sedang menunggu tidak boleh membekukan antrean;
+`store.time_until_ready()` yang membedakan "antrean habis" dari "semua sedang menunggu".
+
 ## 4. Tabel `attempts` (audit)
 
 Satu baris = satu percobaan submit. Tidak pernah di-`UPDATE` untuk percobaan lama:
@@ -119,6 +135,11 @@ Pemetaan `outcome` ke mode chaos (`docs/CHAOS.md`), dipakai worker P8:
 | timeout menunggu respons (`slow`) | `timeout` | `claimed → pending`, backoff (D7) |
 | HTTP 422 penolakan validasi (`validation`) | `permanent` | `claimed → failed`, **tanpa** retry |
 | sukses tapi nomor konfirmasi tidak terbaca | `permanent` | dihitung gagal (D6) |
+| percobaan ditinggal mati worker, lease kedaluwarsa | `timeout` | `claimed → pending`, ditulis sapuan lease (D8) |
+
+Percobaan yang worker-nya mati tidak pernah menulis baris auditnya sendiri;
+`store.recover_stuck` yang menutupnya (memakai `claimed_at` sebagai `started_at` dan
+`worker_id` milik worker yang mati), supaya klaim "100% kegagalan tercatat" tetap benar.
 
 ## 5. State machine
 
@@ -144,7 +165,7 @@ Transisi sah:
 | `claimed` | `ok` | submit sukses **dan** `confirmation` non-NULL tersimpan (D6) |
 | `claimed` | `failed` | penolakan permanen (validasi 422, atau sukses tanpa konfirmasi) |
 | `claimed` | `pending` | retry setelah kegagalan sementara, **atau** lease kedaluwarsa (D8) |
-| `claimed` | `dead` | jatah percobaan habis (D7) |
+| `claimed` | `dead` | jatah percobaan habis (D7): `attempts >= MAX_ATTEMPTS` saat dilepas, termasuk saat job yatim disapu lease |
 
 `ok`, `failed`, `dead` **terminal** — tidak ada jalan keluar. Requeue manual bukan scope
 (D15); ulangi dengan `run_id` baru.
@@ -161,6 +182,12 @@ Aturan wajib:
    tidak salah menghitung job yang sudah selesai.
 5. `assert_transition()` di `src/schema.py` dipanggil lapisan store sebelum menulis;
    transisi ilegal menaikkan `SchemaError`, bukan diam-diam menulis baris salah.
+6. Keputusan dead-letter diambil **di dalam** transaksi pelepasan, dari `attempts` yang
+   baru dibaca — bukan dari angka yang dibawa pemanggil, yang sudah basi begitu worker
+   lain menyentuh job yang sama (`store._finish(exhausted_status=...)`, P8).
+7. Sapuan lease **tidak** menaikkan `attempts`: jatahnya sudah dipakai `claim_one`.
+   Job yatim yang jatahnya habis masuk `dead`, bukan `pending` — baris `pending` yang
+   tidak akan pernah layak diklaim membuat run tidak pernah bisa dinyatakan selesai (D8).
 
 ## 6. Pragma koneksi (D5)
 
@@ -188,6 +215,14 @@ dashboard yang membuka DB yang sudah ada:
   (`test_insert_or_ignore_tidak_menimpa_progres_job`)
 - **`journal_mode` persisten, `busy_timeout` tidak.** Buka DB tanpa `connect()` → tetap
   WAL, tapi tanpa `busy_timeout` → `database is locked` di bawah N worker.
+- **Retry tanpa penundaan = badai retry.** Sebelum P8, job yang dilepas langsung layak
+  diklaim lagi; yang menahannya cuma urutan `updated_at`. Dengan antrean kecil, satu job
+  beracun tetap diputar secepat loop worker. `READY_AT` yang menutup lubang itu.
+  (`test_job_yang_baru_dilepas_belum_layak_diklaim`)
+- **Worker tidak boleh pulang saat antrean cuma sedang menunggu.** `claim_one` yang
+  mengembalikan None berarti "tidak ada yang layak sekarang", bukan "antrean habis".
+  Menyamakan keduanya membuat job yang tinggal menunggu satu detik terlantar sampai run
+  berikutnya. (`test_time_until_ready_membedakan_antrean_habis_dari_antrean_menunggu`)
 - **`init_db` idempoten** dan dipanggil ulang saat resume; ia tidak pernah menghapus data,
   dan menolak DB dengan `SCHEMA_VERSION` berbeda.
 
@@ -195,4 +230,5 @@ dashboard yang membuka DB yang sudah ada:
 
 ```bash
 uv run --no-sync python -m unittest discover -s src -p "test_schema.py" -v
+uv run --no-sync python -m unittest src.test_resilience -v      # backoff, dead-letter, lease (P8)
 ```

@@ -4,8 +4,10 @@ Worker mengisi form seperti manusia lewat Chromium headless (D12) — bukan POST
 karena pitch-nya adalah platform tanpa API. Yang dinilai worker adalah apa yang dilihat
 browser: status HTTP respons `POST /submit`, isi halaman hasil, dan nomor konfirmasi (D6).
 
-Fase ini sengaja belum: paralel (P7), backoff/dead-letter/lease (P8). Kegagalan sementara
-dikembalikan ke `pending` apa adanya, tanpa penundaan.
+Kebijakan ketahanan (P8) tinggal di `src/store.py`: backoff sebelum job layak diklaim
+lagi, dead-letter saat jatah percobaan habis (D7), dan sapuan lease untuk job yang
+ditinggal mati worker lain (D8). Worker di sini hanya menaatinya — ia menunggu sampai
+ada job yang layak, bukan menutup diri begitu tidak ada job yang bisa langsung diambil.
 
 Etika (D14): worker hanya boleh menembak target lokal milik project. `_assert_local_target`
 menegakkannya di kode, bukan sekadar di dokumen.
@@ -29,10 +31,10 @@ from playwright.sync_api import sync_playwright
 
 if __package__:
     from . import store
-    from .schema import RECORD_FIELDS, connect
+    from .schema import LEASE_TIMEOUT_SECONDS, RECORD_FIELDS, connect
 else:  # dijalankan sebagai `python src/worker.py`
     import store
-    from schema import RECORD_FIELDS, connect
+    from schema import LEASE_TIMEOUT_SECONDS, RECORD_FIELDS, connect
 
 #: Nomor konfirmasi target (`docs/TARGET.md` §5). Bentuk lain = halaman salah dibaca.
 CONFIRMATION_RE = re.compile(r"SL-[0-9a-f]{8}\Z")
@@ -48,6 +50,10 @@ VOID_TAGS = frozenset({"br", "hr", "img", "input", "meta", "link", "source", "wb
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8110"
 DEFAULT_TIMEOUT_MS = 15_000
+
+#: Batas tidur sekali putaran saat semua job menunggu backoff. Menahan worker lebih lama
+#: dari ini membuat sapuan lease (D8) telat menolong job yang ditinggal mati worker lain.
+POLL_CAP_SECONDS = 5.0
 
 
 class WorkerError(RuntimeError):
@@ -181,8 +187,13 @@ def submit_job(page, base_url: str, payload: dict[str, object], timeout_ms: int)
 
 def _apply(
     conn: sqlite3.Connection, job: store.Job, result: SubmitResult, started_at: float
-) -> str:
-    """Tulis hasil satu percobaan ke antrean; kembalikan outcome yang tercatat."""
+) -> tuple[str, str]:
+    """Tulis hasil satu percobaan ke antrean; kembalikan `(outcome, status akhir)`.
+
+    Outcome adalah penilaian percobaan (baris audit `attempts`), status adalah nasib
+    job-nya. Keduanya berbeda tepat pada kasus dead-letter: percobaan terakhir sebuah
+    job beracun tetap tercatat `retryable`/`timeout`, tapi job-nya berakhir `dead` (D7).
+    """
     if result.outcome == "ok" and result.confirmation:
         store.mark_ok(
             conn,
@@ -191,9 +202,9 @@ def _apply(
             worker_id=job.worker_id,
             started_at=started_at,
         )
-        return "ok"
+        return "ok", "ok"
     if result.outcome in {"retryable", "timeout"}:
-        store.release(
+        status = store.release(
             conn,
             job.external_ref,
             result.error or result.outcome,
@@ -201,7 +212,7 @@ def _apply(
             started_at=started_at,
             outcome=result.outcome,
         )
-        return result.outcome
+        return result.outcome, status
     store.mark_failed(
         conn,
         job.external_ref,
@@ -209,7 +220,7 @@ def _apply(
         worker_id=job.worker_id,
         started_at=started_at,
     )
-    return "permanent"
+    return "permanent", "failed"
 
 
 def run_worker(
@@ -219,28 +230,54 @@ def run_worker(
     worker_id: str,
     max_jobs: int = 0,
     timeout_ms: int = DEFAULT_TIMEOUT_MS,
+    lease_timeout: float = LEASE_TIMEOUT_SECONDS,
 ) -> dict[str, int]:
-    """Proses job sampai antrean `pending` habis atau `max_jobs` tercapai."""
+    """Proses job sampai antrean `pending` habis atau `max_jobs` tercapai.
+
+    "Habis" berarti tidak ada satu pun baris `pending` — bukan sekadar tidak ada yang
+    layak diklaim detik ini. Job yang sedang menunggu backoff (D7) ditunggu di sini,
+    kalau tidak, worker akan pulang lebih dulu dan menyisakan job yang tinggal
+    menunggu satu detik. Job `claimed` milik worker lain TIDAK menahan worker ini:
+    yang menyelamatkannya adalah sapuan lease, bukan menunggu tanpa batas.
+    """
     _assert_local_target(base_url)
     database = Path(db_path)
     if not database.is_file():
         raise WorkerError(f"antrean tidak ditemukan: {database} (jalankan loader dulu)")
 
-    tally = dict.fromkeys(("ok", "retryable", "timeout", "permanent"), 0)
+    tally = dict.fromkeys(("ok", "retryable", "timeout", "permanent", "dead"), 0)
+    processed = 0
     conn = connect(database)
     try:
+        # Sapuan pertama sebelum browser dibuka: run sebelumnya bisa saja ditinggal
+        # mati (P9), dan job yatimnya harus kembali antre sebelum worker menghitung
+        # antrean sudah habis.
+        store.recover_stuck(conn, lease_timeout=lease_timeout)
+        swept_at = time.monotonic()
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=True)
             page = browser.new_page()
             page.set_default_timeout(timeout_ms)
             try:
-                while max_jobs <= 0 or sum(tally.values()) < max_jobs:
+                while max_jobs <= 0 or processed < max_jobs:
                     job = store.claim_one(conn, worker_id)
                     if job is None:
-                        break
+                        if time.monotonic() - swept_at >= lease_timeout / 2:
+                            store.recover_stuck(conn, lease_timeout=lease_timeout)
+                            swept_at = time.monotonic()
+                            continue
+                        wait = store.time_until_ready(conn)
+                        if wait is None:
+                            break
+                        time.sleep(min(max(wait, 0.05), POLL_CAP_SECONDS))
+                        continue
                     started_at = time.time()
                     result = submit_job(page, base_url, job.payload, timeout_ms)
-                    tally[_apply(conn, job, result, started_at)] += 1
+                    outcome, status = _apply(conn, job, result, started_at)
+                    tally[outcome] += 1
+                    if status == "dead":
+                        tally["dead"] += 1
+                    processed += 1
             finally:
                 page.close()
                 browser.close()
@@ -268,6 +305,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--once", action="store_true", help="proses satu job lalu berhenti")
     parser.add_argument("--worker-id", default=None, help="default: w-<pid>")
     parser.add_argument("--timeout-ms", type=int, default=DEFAULT_TIMEOUT_MS)
+    parser.add_argument(
+        "--lease-timeout",
+        type=float,
+        default=LEASE_TIMEOUT_SECONDS,
+        help="detik sebelum job `claimed` dianggap yatim dan ditarik kembali (D8)",
+    )
     args = parser.parse_args(argv)
 
     worker_id = args.worker_id or f"w-{os.getpid()}"
@@ -278,12 +321,13 @@ def main(argv: list[str] | None = None) -> int:
             worker_id=worker_id,
             max_jobs=1 if args.once else args.max_jobs,
             timeout_ms=args.timeout_ms,
+            lease_timeout=args.lease_timeout,
         )
     except WorkerError as exc:
         parser.error(str(exc))
     print(
         f"worker={worker_id} ok={tally['ok']} retryable={tally['retryable']} "
-        f"timeout={tally['timeout']} permanent={tally['permanent']}"
+        f"timeout={tally['timeout']} permanent={tally['permanent']} dead={tally['dead']}"
     )
     return 0
 

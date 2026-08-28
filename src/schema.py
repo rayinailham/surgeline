@@ -41,6 +41,24 @@ TERMINAL_STATUSES: frozenset[str] = frozenset({"ok", "failed", "dead"})
 #: Hasil satu percobaan pada tabel audit `attempts`.
 ATTEMPT_OUTCOMES: frozenset[str] = frozenset({"ok", "retryable", "permanent", "timeout"})
 
+#: Batas percobaan sebelum job masuk dead-letter (D7, dikunci P8).
+MAX_ATTEMPTS = 5
+
+#: Backoff eksponensial antar percobaan (D7, dikunci P8): 1, 2, 4, 8, 16 detik.
+BACKOFF_BASE_SECONDS = 1.0
+BACKOFF_FACTOR = 2.0
+#: Atap backoff; tanpa ini attempt ke-N di run panjang bisa menidurkan job berjam-jam.
+BACKOFF_CAP_SECONDS = 30.0
+#: Jitter deterministik: penundaan dipanjangkan 0-25% menurut `rowid % 100` job,
+#: supaya job yang dilepas pada detik yang sama tidak jadi layak serentak — tanpa
+#: mengorbankan reproducibility (D3: run harus bisa diulang).
+BACKOFF_JITTER_RATIO = 0.25
+
+#: Umur maksimal klaim sebelum job dianggap yatim dan ditarik kembali (D8, dikunci P8).
+#: Harus jauh di atas durasi submission normal (target `slow` tidur 2 dtk, timeout
+#: worker 15 dtk) supaya sapuan lease tidak merebut job yang masih dikerjakan.
+LEASE_TIMEOUT_SECONDS = 120.0
+
 #: State machine antrean (P4). Transisi di luar peta ini ilegal.
 ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
     # worker mengklaim job lewat satu transaksi `BEGIN IMMEDIATE`
@@ -194,3 +212,16 @@ def status_counts(conn: sqlite3.Connection) -> dict[str, int]:
     for row in conn.execute("SELECT status, COUNT(*) AS n FROM jobs GROUP BY status"):
         counts[row["status"]] = row["n"]
     return counts
+
+
+def backoff_delay(attempts: int, *, base: float = BACKOFF_BASE_SECONDS,
+                  factor: float = BACKOFF_FACTOR, cap: float = BACKOFF_CAP_SECONDS) -> float:
+    """Jeda minimum sebelum job boleh diklaim ulang setelah `attempts` percobaan (D7).
+
+    `attempts` adalah jumlah percobaan yang SUDAH dipakai, jadi percobaan pertama
+    (`attempts=0`) tidak pernah ditunda. Tanpa jeda ini, satu job yang selalu gagal
+    diklaim ulang secepat loop worker berputar dan membombardir target.
+    """
+    if attempts <= 0:
+        return 0.0
+    return min(base * factor ** (attempts - 1), cap)

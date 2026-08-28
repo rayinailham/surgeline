@@ -39,17 +39,31 @@ Tiap submission sukses → target mengembalikan **nomor konfirmasi unik** di hal
 Worker menangkap & menyimpannya ke kolom `confirmation`. Submission "sukses" tanpa nomor
 konfirmasi tersimpan dihitung **gagal** (indikasi worker salah baca halaman hasil).
 
-## D7 — Retry bertingkat + batas percobaan 🔓 (P8)
-Job gagal di-retry dengan backoff eksponensial (mis. base 1 dtk, faktor 2, jitter). Batas
-`max_attempts` (usulan 5). Habis batas → status `dead` (dead-letter) dengan `last_error`.
-Angka final dikunci di P8 + `docs/SCHEMA.md`. 429/503/timeout/500 = retryable; penolakan
-validasi permanen = **tidak** di-retry (langsung `failed`, tercatat alasannya).
+## D7 — Retry bertingkat + batas percobaan 🔒 (dikunci P8)
+Angka final: `MAX_ATTEMPTS = 5`, backoff `base = 1 dtk`, `factor = 2`, atap `30 dtk`
+(tangga 1·2·4·8·16), jitter deterministik 0–25% dari `rowid % 100` job. 429/503/500/timeout
+= retryable; penolakan validasi 422 permanen = **tidak** di-retry (langsung `failed`,
+alasan tercatat). Jatah habis → `dead` (dead-letter) dengan `last_error` non-NULL.
 
-## D8 — Pemulihan job "nyangkut" via lease 🔓 (P8)
-Job `claimed` menyimpan `claimed_at` + `worker_id`. Job yang `claimed` lebih lama dari
-`lease_timeout` (usulan 120 dtk) tanpa selesai dianggap yatim (worker mati) dan dikembalikan
-ke `pending` oleh proses recovery saat startup/berkala. Ini yang membuat crash worker di
-tengah submission tidak menghilangkan job itu selamanya.
+Jitter sengaja **deterministik**, bukan `random()`: run harus bisa diulang (D3), tapi job
+yang dilepas pada detik yang sama tetap tidak boleh jadi layak serentak.
+
+Kelayakan retry dihitung dari `updated_at` + `attempts` yang sudah ada (`store.READY_AT`),
+**tanpa kolom `not_before` baru** — `SCHEMA_VERSION` tetap 1 dan antrean yang sedang
+berjalan tidak perlu dimigrasi (`docs/SCHEMA.md` §3).
+
+## D8 — Pemulihan job "nyangkut" via lease 🔒 (dikunci P8)
+Angka final: `LEASE_TIMEOUT_SECONDS = 120`. Job `claimed` menyimpan `claimed_at` +
+`worker_id`; yang melewati lease dianggap yatim dan ditarik `store.recover_stuck` —
+dipanggil worker saat startup dan tiap setengah lease, serta berdiri sendiri lewat
+`python -m src.recover`. 120 dtk dipilih karena satu submission normal < 1 dtk dan timeout
+worker 15 dtk; sapuan yang lebih agresif akan merebut job yang masih dikerjakan worker
+hidup, dan itu jalan menuju submit ganda.
+
+Sapuan **tidak** menaikkan `attempts` — `claim_one` sudah memakai satu jatah saat job
+diklaim, jadi menaikkannya lagi menghukum satu percobaan dua kali. Job yatim yang jatahnya
+sudah habis langsung ke `dead`, bukan `pending`, supaya tidak ada baris `pending` yang
+selamanya tidak layak diklaim.
 
 ## D9 — Port 🔒
 Target `127.0.0.1:8110` (salinan bersih `8111`). Dashboard `127.0.0.1:8120` (salinan bersih

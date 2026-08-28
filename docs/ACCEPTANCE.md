@@ -14,15 +14,15 @@ perintah pembuktinya.
 | # | Kriteria | Status | Perintah pembukti |
 |---|---|---|---|
 | A1 | 50.000 record diproses sampai tuntas | ⬜ | `sqlite3 queue.db "SELECT COUNT(*) FROM jobs WHERE status IN('ok','failed','dead')"` = 50000, `pending`+`claimed` = 0 |
-| A2 | Duplikat **nol**, dibuktikan query | ⬜ | `SELECT COUNT(*)-COUNT(DISTINCT external_ref) FROM jobs` = 0 · `SELECT COUNT(*)-COUNT(DISTINCT confirmation) FROM jobs WHERE status='ok'` = 0 |
+| A2 | Duplikat **nol**, dibuktikan query | ✅ P5/P8 (subset; skala 50k di P11) | `SELECT COUNT(*)-COUNT(DISTINCT external_ref) FROM jobs` = 0 · `SELECT COUNT(*)-COUNT(DISTINCT confirmation) FROM jobs WHERE status='ok'` = 0 |
 | A3 | Dimatikan paksa ≥2× di tengah run → tetap selesai 100%, tanpa duplikat | ⬜ | `docs/RESUME_PROOF.md`: log 2 `kill -9` + hitung sebelum/sesudah + total akhir 50000 + dup 0 |
-| A4 | Target sengaja error 5% → semua gagal ter-retry & akhirnya berhasil ATAU tercatat rapi alasannya | ⬜ | `SELECT status,COUNT(*) FROM jobs GROUP BY status` · tiap `dead` punya `last_error` non-null |
+| A4 | Target sengaja error 5% → semua gagal ter-retry & akhirnya berhasil ATAU tercatat rapi alasannya | ✅ P8 (chaos 100: ok 80 / failed 10 / dead 10, semua ber-`last_error`; gangguan sementara 20/20 ok) | `SELECT status,COUNT(*) FROM jobs GROUP BY status` · tiap `dead` punya `last_error` non-null |
 | A5 | Nomor konfirmasi tersimpan untuk setiap submission berhasil | ⬜ | `SELECT COUNT(*) FROM jobs WHERE status='ok' AND (confirmation IS NULL OR confirmation='')` = 0 |
 | A6 | Dashboard menampilkan angka yang cocok dengan isi database | ⬜ | screenshot dashboard vs `GROUP BY status` pada detik yang sama, selisih 0 |
 | A7 | Throughput terukur, ditulis dalam angka (bukan perkiraan) | ⬜ | `docs/THROUGHPUT.md`: record/jam per N worker + ekstrapolasi 6 juta ≈ Y hari |
 | A8 | Impor 50.000 baris Excel tidak membuat memori membengkak | ⬜ | grafik/tabel RSS loader datar (≤ ambang), bukan naik linear terhadap baris |
-| A9 | Klaim atomik: N worker paralel, 0 job dikerjakan dua worker | ⬜ | `SELECT external_ref,COUNT(*) FROM attempts GROUP BY external_ref HAVING COUNT(*)>… ` / bukti tak ada double-claim |
-| A10 | Job "nyangkut" (worker mati saat claimed) dipulihkan, tidak hilang | ⬜ | uji lease: bunuh worker saat `claimed` → job kembali `pending` → akhirnya `ok` |
+| A9 | Klaim atomik: N worker paralel, 0 job dikerjakan dua worker | ✅ P7 (4 worker, 500 klaim, 0 double-success) | `SELECT external_ref,COUNT(*) FROM attempts GROUP BY external_ref HAVING COUNT(*)>… ` / bukti tak ada double-claim |
+| A10 | Job "nyangkut" (worker mati saat claimed) dipulihkan, tidak hilang | ✅ P8 (`kill -9` saat `claimed` → lease → `pending` → `ok`, dup 0) | uji lease: bunuh worker saat `claimed` → job kembali `pending` → akhirnya `ok` |
 | A11 | Reproducible satu perintah di salinan bersih | ⬜ | `rsync` ke folder baru → `make all` (port 8111/8121) exit 0, hasil sama |
 | A12 | Nol kredensial bocor; target milik sendiri dinyatakan di README | ⬜ | `make audit` → 0 kebocoran · `.env`/`data/`/`*.db` tak ter-track · README memuat pernyataan legal |
 

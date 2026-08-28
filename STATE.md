@@ -3,10 +3,10 @@
 > File hidup. Dibaca di awal tiap sesi, ditulis ulang di akhir tiap sesi.
 > Satu-satunya memori antar sesi agent. Jaga tetap pendek (< 100 baris).
 
-**Terakhir diperbarui:** 2026-08-28 (sesi P7)
-**Status project:** 🟨 **JALAN** — 8/15 fase selesai, acceptance 2/12
-**Fase aktif:** — (P7 selesai & ter-push)
-**Fase berikutnya:** **P8 — Ketahanan** (retry/backoff, dead-letter, lease recovery; kunci D7/D8)
+**Terakhir diperbarui:** 2026-08-28 (sesi P8)
+**Status project:** 🟨 **JALAN** — 9/15 fase selesai, acceptance 4/12
+**Fase aktif:** — (P8 selesai & ter-push)
+**Fase berikutnya:** **P9 — Bukti Crash-Recovery** (kill -9 ≥2× → resume → 0 dup; `docs/RESUME_PROOF.md`)
 
 ---
 ## Status fase
@@ -21,7 +21,7 @@
 | P5 Loader | ✅ selesai | commit `P05`; 50k dibaca → 49.950 pending, 50 dup ditolak DB; reload +50k ditolak; RSS 55,71 MiB |
 | P6 Worker | ✅ selesai | commit `P06`; 200 job: ok=195 (195 konfirmasi unik, 0 kosong), failed=5; subset 4-mode: ok/retryable/timeout/permanent = 12/12/6/6 |
 | P7 Konkurensi | ✅ selesai | commit `P07`; 4 worker, 500 klaim, 0 double-success, 25,86 job/dtk; 2 test konkurensi |
-| P8 Ketahanan | ⬜ belum | retry+backoff, dead-letter, lease recovery |
+| P8 Ketahanan | ✅ selesai | commit `P08`; chaos 100: ok 80 / failed 10 / dead 10 (semua ber-`last_error`); kill -9 → lease → ok |
 | P9 Bukti Crash-Recovery | ⬜ belum | kill -9 ≥2× → resume → 0 dup, `docs/RESUME_PROOF.md` |
 | P10 Dashboard | ⬜ belum | FastAPI+HTMX `:8120`, angka hidup cocok DB |
 | P11 Run Penuh 50k | ⬜ belum | 50k + chaos + ≥2 kill → status akhir bersih, 0 dup |
@@ -53,6 +53,14 @@ Legenda: ⬜ belum · 🟨 jalan · ✅ selesai · 🟥 blocked
   `docs/SCHEMA.md` §3 & `src/schema.py` diperbarui bersama, `SCHEMA_VERSION` tetap 1
 - **P7:** `src/run.py` runner N proses + pembagian limit; retry singkat write lock di `src/store.py`;
   `src/test_concurrency.py` membuktikan union 500 job, irisan worker kosong, dan retry lock
+- **P8:** `store.READY_AT` (backoff eksponensial + jitter deterministik, tanpa kolom baru),
+  `store.release` → dead-letter saat jatah habis, `store.time_until_ready`,
+  `store.recover_stuck` (sapuan lease + menutup baris audit percobaan yang ditinggal mati),
+  `src/recover.py` CLI, worker menunggu backoff & menyapu lease berkala;
+  `src/test_resilience.py` 16 test. D7/D8 **dikunci**: `MAX_ATTEMPTS=5`, base 1 dtk ×2
+  (atap 30 dtk), jitter 0-25%, `LEASE_TIMEOUT_SECONDS=120`
+- **P8 koreksi dokumen:** `phases/phase-08` minta kolom `not_before` — bertentangan dengan
+  `docs/SCHEMA.md` §3 (SCHEMA menang, AGENTS §5); file fase diperbaiki di sesi yang sama
 - Repo privat `github.com/rayinailham/surgeline`, `origin/main` = commit `P07`. Kolom commit
   memakai **subjek** (`PNN`), bukan hash — sebuah commit tidak bisa memuat hash-nya sendiri.
 
@@ -73,19 +81,20 @@ Legenda: ⬜ belum · 🟨 jalan · ✅ selesai · 🟥 blocked
 | Chaos deterministik | ≈5%, 3 mode, 2 run identik | 112/2.000 = 5,60%; 500=38, lambat=39, validasi=35; diff=0 |
 | Record data uji | 50.000 | 50.000 CSV + XLSX; 49.950 key unik + 50 dup sengaja; 0 invalid |
 | Duplikat external_ref antrean | 0 | 50k dibaca → 49.950 pending; 50 dup ditolak; reload: 0 masuk/50k ditolak; DB dup=0 |
-| Kill -9 saat run → tetap selesai | ≥2× | — |
-| Kegagalan target ter-retry/tercatat | 100% | subset 24: 36 percobaan tercatat (ok 12, retryable 12, timeout 6, permanent 6); 500 → `pending`, 422 → `failed` + `last_error` |
-| Nomor konfirmasi tersimpan tiap sukses | 100% | 195/195 (batch 200) + 12/12 (subset chaos); 0 `ok` tanpa konfirmasi, 0 bentuk di luar `SL-<8hex>` |
+| Kill -9 saat run → tetap selesai | ≥2× | 1× (P8/A10): worker mati saat `claimed` → lease → `pending` → `ok`, attempts 2, dup 0. Full run ≥2× di P9 |
+| Kegagalan target ter-retry/tercatat | 100% | chaos 100 job: audit ok 80 / retryable 50 / permanent 10; `dead` 10 (5 percobaan, 100% ber-`last_error`), `failed` 10 (422, 1 percobaan, tanpa retry), 0 pending/claimed tersisa |
+| Gangguan sementara → akhirnya sukses | 100% | target dimatikan di tengah run: 20 job `retryable` → target hidup → 20/20 `ok` di percobaan ke-3 |
+| Nomor konfirmasi tersimpan tiap sukses | 100% | 195/195 (batch 200) + 80/80 (chaos P8) + 20/20 (gangguan sementara); 0 `ok` tanpa konfirmasi, 0 duplikat konfirmasi |
 | Antrean WAL aktif | `journal_mode=wal` | ✅ persisten di file, terbaca proses lain (sqlite3 CLI) |
 | Klaim paralel | 0 double-claim | 4 worker, 500 attempts; 489 ok = 489 ref unik; 0 sukses oleh >1 worker |
 | Dashboard vs DB | selisih 0 | — |
 | Throughput | terukur | 25,86 job/dtk @4 worker (500 attempts / 19,335 dtk; baseline P12) |
 | Memori generator / loader | datar | gen 10k=49.956/50k=50.008 KiB; loader 10k=50.600/50k=57.044 KiB (+12,74%) |
-| Unit test hijau | selalu | 75/75 OK (termasuk 2 test konkurensi) |
-| Acceptance project | 12/12 | 2/12 (A2 dedup DB, A9 klaim atomik) |
+| Unit test hijau | selalu | 91/91 OK (termasuk 16 test ketahanan P8) |
+| Acceptance project | 12/12 | 4/12 (A2 dedup DB, A4 retry/dead-letter, A9 klaim atomik, A10 lease recovery) |
 
 ## Blocker & keputusan masih 🔓
-- Tidak ada blocker. 🔓 D7 (retry/backoff, `max_attempts`) & D8 (lease) → **P8**; 🔓 D11 (dashboard) → **P10**.
+- Tidak ada blocker. D7 & D8 **terkunci di P8**. 🔓 D11 (dashboard) → **P10**.
 - 🔓 D16 (repo publik) → **butuh izin eksplisit user**, jangan dikunci otomatis.
 
 1. Mesin dipakai user paralel: jangan sentuh container di luar `surgeline-*`, `crosscheck-tut-*` (8090), `~/infra/`.
@@ -94,6 +103,7 @@ Legenda: ⬜ belum · 🟨 jalan · ✅ selesai · 🟥 blocked
 3. Worker dipagari kode: hanya `127.0.0.1`/`localhost` (D14). Sebelum sesi ber-browser jalankan
    `scripts/arch_provision.sh` + `uv run --no-sync playwright install chromium` (tanpa deps);
    Chromium terverifikasi `151.0.7922.34`.
-4. Mode chaos `server_error` deterministik: job itu tidak akan pernah sukses. Sampai P8
-   memasang `max_attempts`/dead-letter, jalankan worker dengan `--max-jobs` supaya run
-   tidak berputar di job yang pasti gagal.
+4. Mode chaos `server_error` deterministik: job itu tidak akan pernah sukses — sejak P8 ia
+   berhenti sendiri di `dead` setelah 5 percobaan, jadi `--max-jobs` tidak lagi wajib.
+5. Perubahan P8 mengubah perilaku run (backoff menambah waktu tunggu job gagal). Bukti P9
+   harus dijalankan dari versi ini, bukan diambil dari run P6/P7.
