@@ -21,11 +21,11 @@ satu transaksi per batch. Catat: baris dibaca, baris dimasukkan, duplikat ditola
 ### 2. Bukti dedup DB (A2)
 ```bash
 uv run --no-sync python src/load.py --input data/input/records.xlsx --run demo
-sqlite3 data/demo/queue.db "SELECT COUNT(*) FROM jobs;"                       # 50000 (bukan 50000+dup)
+sqlite3 data/demo/queue.db "SELECT COUNT(*) FROM jobs;"                       # 49950 (50.000 dibaca, 50 natural-key duplikat)
 sqlite3 data/demo/queue.db "SELECT COUNT(*)-COUNT(DISTINCT external_ref) FROM jobs;"   # 0
-# load ULANG file yang sama → tetap 50000, tidak dobel:
+# load ULANG file yang sama → tetap 49950, tidak dobel:
 uv run --no-sync python src/load.py --input data/input/records.xlsx --run demo
-sqlite3 data/demo/queue.db "SELECT COUNT(*) FROM jobs;"                       # tetap 50000
+sqlite3 data/demo/queue.db "SELECT COUNT(*) FROM jobs;"                       # tetap 49950
 ```
 Jumlah "duplikat ditolak" harus = jumlah duplikat sengaja (P3) + seluruh baris saat load ulang.
 
@@ -49,15 +49,55 @@ uv run --no-sync python -m unittest src.test_load -v
 - `src/load.py`, `src/test_load.py`. (DB di `data/` gitignored.)
 
 ## Definition of Done
-- [ ] 50.000 record ter-load; `COUNT(*)` = 50000; `COUNT-DISTINCT external_ref` = 0.
-- [ ] Load ulang file sama → count tetap (idempoten, dedup DB terbukti).
-- [ ] Jumlah duplikat ditolak dicatat & cocok dengan duplikat sengaja P3.
-- [ ] Puncak RSS loader dicatat, datar (A8).
-- [ ] `uv run … -m unittest src.test_load` lulus.
-- [ ] **Commit + push berhasil** (D13).
+- [x] 50.000 baris terbaca; 49.950 natural key ter-load; `COUNT(*)` = 49950; `COUNT-DISTINCT external_ref` = 0.
+- [x] Load ulang file sama → count tetap (idempoten, dedup DB terbukti).
+- [x] Jumlah duplikat ditolak dicatat & cocok dengan duplikat sengaja P3.
+- [x] Puncak RSS loader dicatat, datar (A8).
+- [x] `uv run … -m unittest src.test_load` lulus.
+- [x] **Commit + push berhasil** (D13).
 
 ## Metrik selesai
-`50000 pending · dup ditolak … · RSS puncak … MB · idempoten terbukti · N test lulus`
+`49.950 pending dari 50.000 baris · dup ditolak 50 · RSS puncak 55,71 MiB · idempoten terbukti · 6 test fokus / 43 test penuh lulus`
+
+## Bukti aktual (2026-08-28)
+
+`/usr/bin/time` tidak tersedia (`/usr/bin/bash: line 1: /usr/bin/time: No such file or directory`),
+jadi RSS kernel diukur tanpa dependency melalui stdlib
+`resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss` yang membungkus subprocess loader.
+
+```text
+$ uv run --no-sync python -c "import resource,subprocess,sys; p=subprocess.run([sys.executable,'src/load.py','--input','data/rss-10000/records.xlsx','--run','p05-rss-10000']); print(f'peak_rss_kib={resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss}'); raise SystemExit(p.returncode)"
+dibaca=10000 dimasukkan=9950 duplikat_ditolak=50
+peak_rss_kib=50600
+
+$ uv run --no-sync python -c "import resource,subprocess,sys; p=subprocess.run([sys.executable,'src/load.py','--input','data/input/records.xlsx','--run','p05-demo']); print(f'peak_rss_kib={resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss}'); raise SystemExit(p.returncode)"
+dibaca=50000 dimasukkan=49950 duplikat_ditolak=50
+peak_rss_kib=57044
+
+$ sqlite3 data/p05-demo/queue.db "SELECT COUNT(*), COUNT(*)-COUNT(DISTINCT external_ref) FROM jobs; SELECT status,COUNT(*) FROM jobs GROUP BY status; PRAGMA journal_mode;"
+49950|0
+pending|49950
+wal
+
+$ uv run --no-sync python src/load.py --input data/input/records.xlsx --run p05-demo
+dibaca=50000 dimasukkan=0 duplikat_ditolak=50000
+
+$ sqlite3 data/p05-demo/queue.db "SELECT COUNT(*), COUNT(*)-COUNT(DISTINCT external_ref) FROM jobs;"
+49950|0
+
+$ uv run --no-sync python -m unittest src.test_load -v
+Ran 6 tests in 0.021s
+OK
+
+$ uv run --no-sync python -m compileall -q src scripts && uv run --no-sync python -m unittest discover -s src -v
+Ran 43 tests in 0.348s
+OK
+```
+
+RSS 5× baris hanya naik 6.444 KiB (12,74%): batch 500 + `openpyxl` read-only, bukan
+pertumbuhan linear. Ketidaksesuaian angka lama `COUNT(*)=50000` diperbaiki menjadi 49.950:
+`docs/DATA_DICTIONARY.md` mengunci 50.000 baris input dengan 50 natural-key duplikat dan D4
+mewajibkan dedup DB.
 
 ## Jebakan
 - Jangan `pandas.read_excel()` tanpa chunk untuk 50k — bisa membengkak. Pakai iterasi read_only

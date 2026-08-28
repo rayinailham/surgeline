@@ -3,10 +3,10 @@
 > File hidup. Dibaca di awal tiap sesi, ditulis ulang di akhir tiap sesi.
 > Satu-satunya memori antar sesi agent. Jaga tetap pendek (< 100 baris).
 
-**Terakhir diperbarui:** 2026-08-28 (sesi P4)
-**Status project:** 🟨 **JALAN** — 5/15 fase selesai, acceptance 0/12
-**Fase aktif:** — (P4 selesai & ter-push)
-**Fase berikutnya:** **P5 — Loader** (`src/load.py` stream CSV/XLSX → antrean, dedup DB, memori datar)
+**Terakhir diperbarui:** 2026-08-28 (sesi P5)
+**Status project:** 🟨 **JALAN** — 6/15 fase selesai, acceptance 1/12
+**Fase aktif:** — (P5 selesai & ter-push)
+**Fase berikutnya:** **P6 — Worker** (`src/worker.py` Playwright headless → target lokal `:8110`)
 
 ---
 ## Status fase
@@ -18,7 +18,7 @@
 | P2 Chaos & Kontrak Target | ✅ selesai | commit `P02`; 112/2.000 = 5,60%, mode 38/39/35, 2 run diff=0, oracle PASS |
 | P3 Generator Data | ✅ selesai | commit `P03`; 50k CSV+XLSX, 50 dup sengaja, RSS 48,84 MiB datar |
 | P4 Kontrak Data & Skema | ✅ selesai | commit `P04`; `docs/SCHEMA.md` terkunci, `src/schema.py` WAL, dedup `1\|1\|0`, 24 test skema |
-| P5 Loader | ⬜ belum | `src/load.py` stream → antrean, dedup DB, memori datar, unit test; **validasi record SEBELUM insert** (SCHEMA §7) |
+| P5 Loader | ✅ selesai | commit `P05`; 50k dibaca → 49.950 pending, 50 dup ditolak DB; reload +50k ditolak; RSS 55,71 MiB |
 | P6 Worker | ⬜ belum | `src/worker.py` Playwright: klaim → isi → tangkap nomor konfirmasi |
 | P7 Konkurensi | ⬜ belum | N worker paralel, klaim atomik, 0 double-claim |
 | P8 Ketahanan | ⬜ belum | retry+backoff, dead-letter, lease recovery |
@@ -46,7 +46,9 @@ Legenda: ⬜ belum · 🟨 jalan · ✅ selesai · 🟥 blocked
 - **P3:** `docs/DATA_DICTIONARY.md` + 2 test regresi generator; data hasil tetap gitignored
 - **P4:** `src/schema.py` (`init_db`/`connect`/`assert_transition`/`status_counts`, WAL+busy_timeout),
   `src/tests/test_schema.py` (24 test), `docs/SCHEMA.md` **terkunci** (`SCHEMA_VERSION=1`)
-- Repo privat `github.com/rayinailham/surgeline`, `origin/main` = commit `P04` (P0 = `2409499`)
+- **P5:** `src/load.py` stream CSV/XLSX, validasi sebelum `INSERT OR IGNORE`, transaksi batch;
+  `src/test_load.py` 6 test; DB bukti `data/p05-demo/queue.db` gitignored
+- Repo privat `github.com/rayinailham/surgeline`, `origin/main` = commit `P05` (P0 = `2409499`)
   Sebuah commit tidak bisa memuat hash-nya sendiri, jadi mulai P1 kolom commit memakai
   **subjek** (`PNN`), bukan hash. Hash dilihat dengan `git log --oneline`.
 
@@ -68,16 +70,16 @@ Legenda: ⬜ belum · 🟨 jalan · ✅ selesai · 🟥 blocked
 | Target: konfirmasi idempoten per `external_ref` | identik | ✅ 600 req / 300 ref / 32 thread → 303 baris, 303 konfirmasi unik, 0 duplikat |
 | Chaos deterministik | ≈5%, 3 mode, 2 run identik | 112/2.000 = 5,60%; 500=38, lambat=39, validasi=35; diff=0 |
 | Record data uji | 50.000 | 50.000 CSV + XLSX; 49.950 key unik + 50 dup sengaja; 0 invalid |
-| Duplikat (external_ref & confirmation) | 0 | ✅ skema: `INSERT OR IGNORE` 2× → `total\|uniq\|dup` = `1\|1\|0`; `UNIQUE(confirmation)` menolak dobel |
+| Duplikat external_ref antrean | 0 | 50k dibaca → 49.950 pending; 50 dup ditolak; reload: 0 masuk/50k ditolak; DB dup=0 |
 | Kill -9 saat run → tetap selesai | ≥2× | — |
 | Kegagalan target ter-retry/tercatat | 100% | — |
 | Nomor konfirmasi tersimpan tiap sukses | 100% | — |
 | Antrean WAL aktif | `journal_mode=wal` | ✅ persisten di file, terbaca proses lain (sqlite3 CLI) |
 | Dashboard vs DB | selisih 0 | — |
 | Throughput | terukur | — |
-| Memori generator | datar | 10k=49.956 KiB; 50k=50.008 KiB (+0,10% untuk 5× row) |
-| Unit test hijau | selalu | 37/37 OK |
-| Acceptance project | 12/12 | 0/12 |
+| Memori generator / loader | datar | gen 10k=49.956/50k=50.008 KiB; loader 10k=50.600/50k=57.044 KiB (+12,74%) |
+| Unit test hijau | selalu | 43/43 OK (loader 6/6) |
+| Acceptance project | 12/12 | 1/12 (A2 dedup DB) |
 
 ## Blocker & keputusan masih 🔓
 - Tidak ada blocker.
@@ -87,13 +89,9 @@ Legenda: ⬜ belum · 🟨 jalan · ✅ selesai · 🟥 blocked
 
 ## Catatan tersisa untuk user
 1. Repo GitHub dibuat sesi ini: `rayinailham/surgeline`, **privat**, akun personal. Push pertama OK.
-2. **Untuk P5:** `INSERT OR IGNORE` menelan SEMUA pelanggaran constraint, bukan hanya duplikat
-   `external_ref` (CHECK status & attempts ikut hilang diam-diam). Loader wajib memvalidasi record
-   sebelum insert dan memakai `rowcount` untuk memisahkan "duplikat dilewati" dari "masuk".
-   Jangan pernah menggantinya dengan `INSERT OR REPLACE` (menghapus progres job). SCHEMA §7.
-3. Mesin dipakai user paralel: jangan restart container di luar `surgeline-*`, jangan sentuh
+2. Mesin dipakai user paralel: jangan restart container di luar `surgeline-*`, jangan sentuh
    `crosscheck-tut-*` (8090) dan `/home/rayin/infra/`.
-4. Nama field terkunci di 3 tempat yang sudah cocok (form target, DATA_DICTIONARY, SCHEMA §1):
+3. Nama field terkunci di 3 tempat yang sudah cocok (form target, DATA_DICTIONARY, SCHEMA §1):
    `external_ref, full_name, email, policy_no, amount, notes`. `external_ref` = natural key (D4).
-5. P3 canonical: `data/input/records.{csv,xlsx}`; data gitignored. XLSX write-only tidak punya
-   dimensi `max_row`, jadi hitung verifikasi lewat `iter_rows(values_only=True)` read-only.
+4. P6 wajib menjalankan `scripts/arch_provision.sh` dulu, worker hanya target lokal `127.0.0.1:8110`,
+   dan tangkap nomor konfirmasi; `playwright install chromium` tanpa deps.
