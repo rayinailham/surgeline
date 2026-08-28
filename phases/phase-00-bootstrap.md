@@ -48,14 +48,70 @@ Cek `.gitignore` sudah menutup `data/`, `reports/`, `.env`, `*.db`. Repo **priva
 - `env-check.md` (hasil nyata), `pyproject.toml`, `uv.lock`, `Makefile` kerangka, struktur folder.
 
 ## Definition of Done
-- [ ] `env-check.md` berisi versi nyata semua tool + status port 8110/8120 bebas.
-- [ ] `uv sync` exit 0; jumlah paket dicatat.
-- [ ] `uv run --no-sync python -c "import playwright, fastapi, openpyxl, pandas, faker"` sukses.
-- [ ] Struktur folder & `Makefile` kerangka berdiri.
-- [ ] **Commit + push berhasil** (D13) ke `origin/main`, `git status --short` bersih dari rahasia.
+- [x] `env-check.md` berisi versi nyata semua tool + status port 8110/8120 bebas.
+- [x] `uv sync` exit 0; jumlah paket dicatat.
+- [x] `uv run --no-sync python -c "import playwright, fastapi, openpyxl, pandas, faker"` sukses.
+- [x] Struktur folder & `Makefile` kerangka berdiri.
+- [x] **Commit + push berhasil** (D13) ke `origin/main`, `git status --short` bersih dari rahasia.
+
+## Bukti (output nyata, sesi 2026-08-28)
+
+```
+$ ss -tlnp | grep -E ':(8110|8120)\b' || echo "8110/8120 bebas"
+8110/8120 bebas
+$ docker ps --format '{{.Names}} {{.Ports}}'
+crosscheck-tut-wordpress-1 127.0.0.1:8090->80/tcp
+```
+
+```
+$ uv sync
+Installed 29 packages in 101ms
+$ echo $?
+0
+```
+
+```
+$ uv run --no-sync python -c "import sys, playwright, fastapi, openpyxl, pandas, faker; ..."
+python 3.13.13
+imports OK
+exit=0
+```
+
+```
+$ make test
+uv run --no-sync python -m compileall -q src scripts
+uv run --no-sync python -m unittest discover -s src -v
+test_core_dependencies_importable ... ok
+test_python_version ... ok
+test_sqlite_supports_wal ... ok
+Ran 3 tests in 0.605s
+OK
+exit=0
+```
+
+```
+$ make audit
+audit: scripts/secret_audit.py belum ada (dibuat di P14) - cek manual
+audit manual: bersih
+exit=0
+$ git status --short      # sebelum commit: 43 file, tanpa .env / data/ / reports/ / *.db
+```
+
+```
+$ gh repo create rayinailham/surgeline --private ...
+https://github.com/rayinailham/surgeline
+$ git push -u origin main
+ * [new branch]      main -> main
+branch 'main' set up to track 'origin/main'.
+exit=0
+$ gh repo view rayinailham/surgeline --json isPrivate,name,url
+{"isPrivate":true,"name":"surgeline","url":"https://github.com/rayinailham/surgeline"}
+```
+
+Commit fase: `2409499` — `P00: bootstrap uv project, struktur folder, Makefile, env-check`
 
 ## Metrik selesai
-`N tool diverifikasi · uv sync exit 0 · M paket · push commit P00 sukses`
+`13 tool diverifikasi · uv sync exit 0 · 29 paket (31 entri uv.lock) · make test 3/3 OK · push commit P00 sukses`
 
 ## Jebakan
 - Jangan `sudo`/`pacman`/`playwright install-deps`. Gagal di Arch.
