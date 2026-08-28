@@ -74,6 +74,7 @@ class TestInitDb(SchemaTestCase):
         self.assertIn("meta", names)
         self.assertIn("idx_jobs_status", names)
         self.assertIn("idx_jobs_status_claimed_at", names)
+        self.assertIn("idx_jobs_status_updated_at", names)
         self.assertIn("idx_attempts_external_ref", names)
 
     def test_kolom_jobs_sesuai_docs_schema(self) -> None:

@@ -76,6 +76,15 @@ Index:
 |---|---|---|
 | `idx_jobs_status` | `(status)` | hitungan dashboard, ambil batch `pending` |
 | `idx_jobs_status_claimed_at` | `(status, claimed_at)` | sapuan lease: `claimed` lewat timeout (D8) |
+| `idx_jobs_status_updated_at` | `(status, updated_at)` | klaim job `pending` terlama dulu (P6); kelayakan backoff D7 (P8) |
+
+**Klaim mengambil `pending` dengan `updated_at` terkecil, bukan `rowid` terkecil.**
+Loader menulis `created_at = updated_at`, jadi urutan awalnya tetap FIFO; bedanya muncul
+saat job dilepas kembali ke `pending`, yang menyegarkan `updated_at` dan memindahkannya ke
+belakang antrean. Tanpa itu, satu job yang selalu gagal langsung diklaim ulang oleh worker
+yang sama dan memonopoli run — terukur di P6: 24 percobaan berturut-turut jatuh ke satu
+`external_ref` dan 23 job lain tidak tersentuh. Ini prasyarat backoff D7 di P8, yang
+menghitung kelayakan retry dari `updated_at` + `attempts` (bukan kolom baru).
 
 ## 4. Tabel `attempts` (audit)
 

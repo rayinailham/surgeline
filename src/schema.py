@@ -83,9 +83,12 @@ _DDL: tuple[str, ...] = (
     )
     """,
     # Antrean membaca `WHERE status='pending'`; recovery lease membaca
-    # `WHERE status='claimed' AND claimed_at < ?` (D8).
+    # `WHERE status='claimed' AND claimed_at < ?` (D8). Klaim mengurutkan pending
+    # berdasar `updated_at` supaya job yang baru dilepas tidak langsung diklaim ulang
+    # dan memonopoli worker (P6); kelayakan backoff D7 dihitung dari kolom yang sama.
     "CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs (status)",
     "CREATE INDEX IF NOT EXISTS idx_jobs_status_claimed_at ON jobs (status, claimed_at)",
+    "CREATE INDEX IF NOT EXISTS idx_jobs_status_updated_at ON jobs (status, updated_at)",
     """
     CREATE TABLE IF NOT EXISTS attempts (
         id           INTEGER PRIMARY KEY AUTOINCREMENT,
