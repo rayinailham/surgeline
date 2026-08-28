@@ -1,0 +1,20 @@
+[project]
+name = "surgeline"
+version = "0.1.0"
+description = "Bulk web-form submission pipeline: Excel/CSV -> SQLite queue -> parallel Playwright workers -> live dashboard."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "playwright",
+    "fastapi",
+    "uvicorn",
+    "jinja2",
+    "python-multipart",
+    "httpx",
+    "openpyxl",
+    "pandas",
+    "faker",
+]
+
+[tool.uv]
+package = false

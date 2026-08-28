@@ -1,0 +1,31 @@
+# runtime data & state — tidak pernah masuk repo (AGENTS §4)
+data/
+reports/
+auth/
+*.db
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.db-wal
+*.db-shm
+
+# rahasia
+.env
+.env.local
+
+# python / uv
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# playwright / browser
+.playwright-mcp/
+
+# generated big files (contoh data uji besar)
+*.xlsx
+!assets/sample_*.xlsx
+data/*.csv
+
+# os
+.DS_Store
