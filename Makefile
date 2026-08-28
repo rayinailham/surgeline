@@ -34,8 +34,14 @@ audit:  ## Cek tidak ada rahasia/artefak runtime yang ter-stage (P14 mengisi scr
 			|| echo "audit manual: bersih"; \
 	fi
 
-target-up:  ## Nyalakan target app :8110 (diisi di P1)
-	@echo "target-up: belum ada (P1)"
+target-up:  ## Nyalakan target app :8110 (docker-compose.yml project, D2/D9)
+	docker compose up -d --build
+	@for i in 1 2 3 4 5 6 7 8 9 10; do \
+		code=$$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8110/health 2>/dev/null); \
+		if [ "$$code" = "200" ]; then echo "target-up: :8110/health -> 200"; exit 0; fi; \
+		sleep 1; \
+	done; \
+	echo "target-up GAGAL: :8110/health tidak 200"; docker compose logs --tail=30 target; exit 1
 
-target-down:  ## Matikan target app (diisi di P1)
-	@echo "target-down: belum ada (P1)"
+target-down:  ## Matikan target app (container + state target ikut hilang)
+	docker compose down

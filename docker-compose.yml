@@ -1,0 +1,11 @@
+# SurgeLine — target app yang diuji (D2, D9). BUKAN ~/infra/docker-compose.yml.
+services:
+  target:
+    build: ./target
+    image: surgeline-target:local
+    container_name: surgeline-target
+    ports: ["127.0.0.1:8110:8080"]
+    environment:
+      SURGELINE_CHAOS_RATE: "0.0"      # P1 tanpa chaos; chaos diaktifkan di P2 (D3)
+      SURGELINE_CHAOS_SEED: "1337"
+    restart: unless-stopped
