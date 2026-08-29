@@ -20,6 +20,7 @@ import os
 import re
 import sqlite3
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path
@@ -223,6 +224,57 @@ def _apply(
     return "permanent", "failed"
 
 
+def _drain_queue(
+    conn: sqlite3.Connection,
+    submit: Callable[[dict[str, str]], SubmitResult],
+    *,
+    worker_id: str,
+    max_jobs: int,
+    lease_timeout: float,
+    monotonic: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+) -> dict[str, int]:
+    """Putaran klaim-submit-tulis, terlepas dari Playwright.
+
+    Dipisahkan dari `run_worker` supaya penjadwalan sapuan lease bisa diuji dengan jam
+    palsu, tanpa browser dan tanpa benar-benar menunggu dua menit.
+
+    `submit` menerima payload job dan mengembalikan penilaian satu percobaan; di
+    produksi itu `submit_job` di atas halaman Chromium yang sudah dibuka.
+    """
+    tally = dict.fromkeys(("ok", "retryable", "timeout", "permanent", "dead"), 0)
+    processed = 0
+    # Sapuan pertama sebelum job pertama diklaim: run sebelumnya bisa saja ditinggal
+    # mati (P9), dan job yatimnya harus kembali antre sebelum worker menghitung
+    # antrean sudah habis.
+    store.recover_stuck(conn, lease_timeout=lease_timeout)
+    swept_at = monotonic()
+    while max_jobs <= 0 or processed < max_jobs:
+        # R2: sapuan dijadwalkan oleh waktu, bukan oleh antrean yang kebetulan kosong.
+        # Sebelumnya panggilan ini menumpang cabang `job is None`, jadi selama antrean
+        # masih penuh `claim_one` tidak pernah mengembalikan None dan sapuan tidak
+        # pernah jatuh tempo: job yatim menunggu sampai antrean habis (terukur di P11:
+        # 27 menit), bukan sampai lease lewat seperti bunyi D8.
+        if monotonic() - swept_at >= lease_timeout / 2:
+            store.recover_stuck(conn, lease_timeout=lease_timeout)
+            swept_at = monotonic()
+        job = store.claim_one(conn, worker_id)
+        if job is None:
+            wait = store.time_until_ready(conn)
+            if wait is None:
+                break
+            sleep(min(max(wait, 0.05), POLL_CAP_SECONDS))
+            continue
+        started_at = time.time()
+        result = submit(job.payload)
+        outcome, status = _apply(conn, job, result, started_at)
+        tally[outcome] += 1
+        if status == "dead":
+            tally["dead"] += 1
+        processed += 1
+    return tally
+
+
 def run_worker(
     db_path: str | Path,
     *,
@@ -245,45 +297,25 @@ def run_worker(
     if not database.is_file():
         raise WorkerError(f"antrean tidak ditemukan: {database} (jalankan loader dulu)")
 
-    tally = dict.fromkeys(("ok", "retryable", "timeout", "permanent", "dead"), 0)
-    processed = 0
     conn = connect(database)
     try:
-        # Sapuan pertama sebelum browser dibuka: run sebelumnya bisa saja ditinggal
-        # mati (P9), dan job yatimnya harus kembali antre sebelum worker menghitung
-        # antrean sudah habis.
-        store.recover_stuck(conn, lease_timeout=lease_timeout)
-        swept_at = time.monotonic()
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=True)
             page = browser.new_page()
             page.set_default_timeout(timeout_ms)
             try:
-                while max_jobs <= 0 or processed < max_jobs:
-                    job = store.claim_one(conn, worker_id)
-                    if job is None:
-                        if time.monotonic() - swept_at >= lease_timeout / 2:
-                            store.recover_stuck(conn, lease_timeout=lease_timeout)
-                            swept_at = time.monotonic()
-                            continue
-                        wait = store.time_until_ready(conn)
-                        if wait is None:
-                            break
-                        time.sleep(min(max(wait, 0.05), POLL_CAP_SECONDS))
-                        continue
-                    started_at = time.time()
-                    result = submit_job(page, base_url, job.payload, timeout_ms)
-                    outcome, status = _apply(conn, job, result, started_at)
-                    tally[outcome] += 1
-                    if status == "dead":
-                        tally["dead"] += 1
-                    processed += 1
+                return _drain_queue(
+                    conn,
+                    lambda payload: submit_job(page, base_url, payload, timeout_ms),
+                    worker_id=worker_id,
+                    max_jobs=max_jobs,
+                    lease_timeout=lease_timeout,
+                )
             finally:
                 page.close()
                 browser.close()
     finally:
         conn.close()
-    return tally
 
 
 def _db_path(run_id: str | None, explicit: Path | None) -> Path:

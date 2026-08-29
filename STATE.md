@@ -3,10 +3,10 @@
 > File hidup. Dibaca di awal tiap sesi, ditulis ulang di akhir tiap sesi.
 > Satu-satunya memori antar sesi agent. Jaga tetap pendek (< 100 baris).
 
-**Terakhir diperbarui:** 2026-08-29 (sesi P11)
+**Terakhir diperbarui:** 2026-08-29 (sesi R2)
 **Status project:** 🟨 **JALAN** — 12/15 fase selesai, acceptance 9/12
-**Fase aktif:** — (P11 selesai & ter-push; gerbang kesehatan hijau)
-**Fase berikutnya:** **R2 lebih dulu** (temuan sapuan lease, lihat §Temuan) → **P12 Throughput**
+**Fase aktif:** — (R2 ditutup & ter-push; gerbang kesehatan hijau, 110/110)
+**Fase berikutnya:** **P12 Throughput** (tidak ada temuan terbuka)
 
 ---
 ## Status fase
@@ -36,18 +36,18 @@ Legenda: ⬜ belum · 🟨 jalan · ✅ selesai · 🟥 blocked
 - **P1:** `target/` (FastAPI form+konfirmasi, Dockerfile) + `docker-compose.yml` root,
   `docs/TARGET.md` (selector D6), 7 test kontrak (skip kalau `:8110` mati)
 - **P2/P3:** chaos hash 3 mode + `docs/CHAOS.md` + `scripts/target_oracles.py`; `scripts/gen_data.py` CSV+XLSX write-only (50k, seed 42) + `docs/DATA_DICTIONARY.md`
-- **P4/P5:** `src/schema.py` + `docs/SCHEMA.md` **terkunci** (`SCHEMA_VERSION=1`, 24 test);
-  `src/load.py` stream CSV/XLSX + validasi sebelum `INSERT OR IGNORE` (6 test)
+- **P4/P5:** `src/schema.py` + `docs/SCHEMA.md` **terkunci** (`SCHEMA_VERSION=1`, 24 test); `src/load.py` stream CSV/XLSX + validasi sebelum `INSERT OR IGNORE` (6 test)
 - **P6/P7:** `src/store.py` (`claim_one` `BEGIN IMMEDIATE`, transisi+audit satu transaksi),
   `src/worker.py` (Chromium headless, pagar target lokal D14), `src/run.py` runner N proses; 32 test
 - **P8:** `store.READY_AT` (backoff+jitter deterministik), dead-letter, `recover_stuck`,
   `src/recover.py`, 16 test. D7/D8 **dikunci**: `MAX_ATTEMPTS=5`, 1 dtk ×2 (atap 30),
   jitter 0-25%, `LEASE_TIMEOUT_SECONDS=120`
-- **P9/P10:** `docs/RESUME_PROOF.md` (3.000 job, 2× kill, 8 yatim); `src/dashboard.py` + HTMX
-  lokal, SQLite `mode=ro`, 15 test; rekaman & screenshot → P14.
+- **P9/P10:** `docs/RESUME_PROOF.md` (3.000 job, 2× kill, 8 yatim); `src/dashboard.py` + HTMX lokal,
+  SQLite `mode=ro`, 15 test; rekaman & screenshot → P14.
 - **P11:** `scripts/run_summary.py` → `data/<run>/run.json`; run penuh `data/full50k/` + log kill
-  (gitignored); bukti lengkap di `phases/phase-11-full-run.md`. (R1: 2 test regresi.)
-  Repo privat `github.com/rayinailham/surgeline`; kolom commit memakai subjek (`PNN`), bukan hash.
+  (gitignored); bukti di `phases/phase-11-full-run.md`. Repo privat `github.com/rayinailham/surgeline`;
+  kolom commit memakai subjek (`PNN`), bukan hash. (R1: 2 test regresi.)
+- **R2:** `worker._drain_queue` (putaran tanpa browser, jam & sleep disuntik) + 2 test regresi.
 
 ## Fakta terverifikasi tentang mesin ini (P0, 2026-08-28)
 - Python **3.13.13** · Docker/Compose/ffmpeg/Make/sqlite3 ada · port project `8110`/`8120`.
@@ -64,6 +64,7 @@ Legenda: ⬜ belum · 🟨 jalan · ✅ selesai · 🟥 blocked
 | Chaos deterministik | ≈5%, 3 mode, 2 run identik | 112/2.000 = 5,60%; 500=38, lambat=39, validasi=35; diff=0 |
 | Record data uji | 50.000 | 50.000 CSV + XLSX; 49.950 key unik + 50 dup sengaja; 0 invalid |
 | Duplikat external_ref antrean | 0 | 50k dibaca → 49.950 pending; 50 dup ditolak; reload: 0 masuk/50k ditolak; DB dup=0 |
+| Latensi sapuan lease (yatim lahir saat antrean penuh) | ≤ lease/2 | **23,0 dtk @ lease 60** (sisa pending 136); kode lama 41,0 dtk (sisa pending 4) — R2 |
 | Kill -9 saat run → tetap selesai | ≥2× | **P11 (50k): 2×; ok 0→10.621→21.508→48.273; 7/7 yatim pulih (semua `ok`); terminal 49.950/49.950; dup ref/konfirmasi 0/0**. P9 (3k): 2×, 8/8 yatim pulih |
 | Kegagalan target ter-retry/tercatat | 100% | P11 50k: `dead` 833 = **persis** himpunan chaos `server_error` (5 percobaan, 100% ber-`last_error`); `failed` 844 = **persis** himpunan `validation` (422, 1 percobaan, tanpa retry); `slow` 842 + jujur 47.431 semuanya `ok` |
 | Gangguan sementara → akhirnya sukses | 100% | target dimatikan di tengah run: 20 job `retryable` → target hidup → 20/20 `ok` di percobaan ke-3 |
@@ -73,20 +74,19 @@ Legenda: ⬜ belum · 🟨 jalan · ✅ selesai · 🟥 blocked
 | Dashboard vs DB | selisih 0 | P11 skala penuh: 49.950 = ok 48.273 + failed 844 + dead 833, pending/claimed 0; selisih 0 (P10: 64 poll HTTP 200, selisih 0) |
 | Throughput | terukur | **run penuh: 17,01 ok/dtk = 61.225 record/jam @4 worker** (48.273 ok / 2.837,8 dtk, termasuk 2 restart); pass final 18,99 job/dtk; burst P7 25,86 job/dtk |
 | Memori generator / loader | datar | gen 10k=49.956/50k=50.008 KiB; loader 10k=50.600/50k=57.044 KiB (+12,74%) |
-| Unit test hijau | selalu | 108/108 OK; 15 test dashboard OK; `test_target_contract` 40 run berturut, gagal=0 (R1) |
+| Unit test hijau | selalu | **110/110 OK** (+2 regresi R2); 15 test dashboard OK; `test_target_contract` 40 run berturut, gagal=0 (R1) |
 | Acceptance project | 12/12 | 9/12 (P11 menutup A1 run penuh, A2 dedup, A3 resume, A4 retry/dead-letter, A5 last_error, A6 dashboard=DB pada skala 49.950) |
 
 ## Temuan audit
-- 🟨 **R2 (TERBUKA, kerjakan sebelum P12):** sapuan lease hanya jalan saat `claim_one`
-  mengembalikan `None` (`src/worker.py:265`), jadi selama antrean masih penuh ia tidak pernah
-  jatuh tempo — 3 yatim kill2 baru disapu 27 mnt kemudian, bukan 60 dtk seperti bunyi D8.
-  Dampak **latensi, bukan kehilangan** (7/7 pulih, status akhir bersih). Remediasi: sapuan
-  berbasis waktu terlepas dari hasil klaim + test regresi; commit terpisah.
-- ⬜ Target cold-start: 1 HTTP 500 asli (`PRAGMA journal_mode=WAL` → `database is locked`)
-  saat 4 worker menabrak container segar. Milik target, bukan pipeline; worker pulih sendiri
-  (`REC-000002` retryable → ok). Kandidat rapikan di P14, bukan bug D3.
-- ✅ **R1 (ditutup):** flaky kontrak akibat ref acak kena chaos deterministik (1.051/20.000 = 5,25%);
-  `_honest_ref()` + 2 regresi anti-drift menutupnya tanpa mengubah target D3.
+- ✅ **R2 (ditutup):** sapuan lease dulu menumpang cabang `claim_one is None`, jadi selama antrean
+  penuh ia tak pernah jatuh tempo (P11: 3 yatim disapu 27 mnt, bukan 60 dtk seperti bunyi D8);
+  latensi, bukan kehilangan. Perbaikan: putaran dipisah ke `worker._drain_queue` (seam jam/sleep,
+  tanpa Playwright), sapuan dijadwalkan **waktu** di puncak putaran. E2E 400 job, yatim lahir saat
+  antrean penuh: **lama 41,0 dtk (sisa pending=4)** vs **baru 23,0 dtk (sisa pending=136)**, ≤ lease/2=30;
+  dua run ok 389/failed 8/dead 3, dup 0/0. 2 regresi `TestJadwalSapuanLease` (GAGAL di kode lama).
+- ⬜ Target cold-start: 1 HTTP 500 asli (`PRAGMA journal_mode=WAL` → `database is locked`) saat 4
+  worker menabrak container segar. Milik target, worker pulih sendiri. Rapikan di P14, bukan bug D3.
+- ✅ **R1 (ditutup):** flaky kontrak akibat ref acak kena chaos deterministik; `_honest_ref()` + 2 regresi.
 
 ## Blocker & keputusan masih 🔓
 - Tidak ada blocker. D7 & D8 terkunci di P8; D11 terkunci di P10. Tidak ada 🔓 jatuh di P11.

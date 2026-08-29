@@ -6,13 +6,15 @@ dan tidak bisa berkedip (flaky) karena mesin sedang sibuk.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
-from src import store
+from src import store, worker
 from src.schema import (
     BACKOFF_BASE_SECONDS,
     BACKOFF_CAP_SECONDS,
@@ -23,6 +25,29 @@ from src.schema import (
 )
 
 NOW = 1_000_000.0
+
+
+class _FakeClock:
+    """Jam monotonic palsu: tiap pembacaan maju `step` detik."""
+
+    def __init__(self, *, step: float) -> None:
+        self.step = step
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        value = self.now
+        self.now += self.step
+        return value
+
+
+def _no_sleep(_seconds: float) -> None:
+    raise AssertionError("putaran tidak boleh benar-benar tidur di dalam test")
+
+
+def _always_ok(payload: dict[str, str]) -> worker.SubmitResult:
+    """Submit palsu yang selalu sukses dengan konfirmasi unik per `external_ref`."""
+    digest = hashlib.sha256(payload["external_ref"].encode()).hexdigest()[:8]
+    return worker.SubmitResult(outcome="ok", confirmation=f"SL-{digest}")
 
 
 class ResilienceTestCase(unittest.TestCase):
@@ -274,6 +299,96 @@ class TestLeaseRecovery(ResilienceTestCase):
                 self.conn, "REC-001", "SL-a6d5ec39",
                 worker_id="w-lama", started_at=NOW, now=NOW + 210.0,
             )
+
+
+class TestJadwalSapuanLease(ResilienceTestCase):
+    """R2: sapuan lease harus jatuh tempo karena waktu, bukan karena antrean kosong.
+
+    Sebelum perbaikan, `store.recover_stuck` hanya dipanggil di cabang `job is None`
+    putaran worker. Selama masih ada job layak klaim, cabang itu tidak pernah
+    tersentuh, jadi job yatim menganggur sampai antrean habis — di run penuh P11
+    terukur 27 menit, bukan setengah lease seperti bunyi D8.
+    """
+
+    def orphan(self, ref: str) -> None:
+        """Tinggalkan satu job di `claimed` dengan lease yang sudah lewat jauh.
+
+        Dipanggil dari dalam putaran, bukan di `setUp`: yatim yang sudah ada sebelum
+        worker mulai ditolong sapuan startup, jadi ia tidak menguji apa pun tentang
+        jadwal sapuan di dalam putaran. Yang diuji di sini adalah worker lain yang mati
+        SETELAH run berjalan, selagi antrean masih penuh.
+        """
+        self.seed(ref)
+        dead_since = time.time() - 10_000.0
+        self.conn.execute(
+            "UPDATE jobs SET status = 'claimed', worker_id = 'w-mati', attempts = 1,"
+            " claimed_at = ?, updated_at = ? WHERE external_ref = ?",
+            (dead_since, dead_since, ref),
+        )
+
+    def test_yatim_disapu_walau_antrean_tidak_pernah_kosong(self) -> None:
+        self.seed(*(f"REC-{index:03d}" for index in range(20)))
+        submitted: list[str] = []
+
+        def submit(payload: dict[str, str]) -> worker.SubmitResult:
+            if not submitted:  # worker tetangga mati tepat setelah job pertama
+                self.orphan("REC-YATIM")
+            submitted.append(payload["external_ref"])
+            return _always_ok(payload)
+
+        tally = worker._drain_queue(
+            self.conn,
+            submit,
+            worker_id="w-hidup",
+            max_jobs=10,  # antrean 20 job: `claim_one` tidak pernah mengembalikan None
+            lease_timeout=60.0,
+            monotonic=_FakeClock(step=5.0),  # setengah lease lewat di putaran ke-6
+            sleep=_no_sleep,
+        )
+
+        self.assertEqual(tally["ok"], 10)
+        # Antrean memang tidak pernah kosong selama putaran: 21 job, 10 diproses.
+        self.assertGreater(store.counts(self.conn)["pending"], 0)
+        row = self.job_row("REC-YATIM")
+        self.assertNotEqual(row["status"], "claimed")
+        self.assertNotEqual(row["worker_id"], "w-mati")
+        # Baris audit sapuan adalah bukti permanennya: status job bisa maju lagi
+        # setelah pulih, `attempts` tidak.
+        sweeps = [
+            attempt
+            for attempt in self.attempt_rows("REC-YATIM")
+            if attempt["outcome"] == "timeout" and "lease" in (attempt["error"] or "")
+        ]
+        self.assertEqual(len(sweeps), 1)
+
+    def test_sapuan_tidak_dipanggil_sebelum_setengah_lease(self) -> None:
+        # Pagar arah sebaliknya: sapuan yang terlalu rajin merebut job yang masih
+        # dikerjakan worker hidup (D8), jadi jadwalnya tidak boleh tiap putaran.
+        self.orphan("REC-YATIM")
+        self.seed(*(f"REC-{index:03d}" for index in range(5)))
+        calls: list[float] = []
+        real_recover = store.recover_stuck
+
+        def counted(conn, **kwargs):
+            calls.append(0.0)
+            return real_recover(conn, **kwargs)
+
+        store.recover_stuck = counted
+        self.addCleanup(setattr, store, "recover_stuck", real_recover)
+        try:
+            worker._drain_queue(
+                self.conn,
+                _always_ok,
+                worker_id="w-hidup",
+                max_jobs=3,
+                lease_timeout=600.0,  # setengah lease = 300 dtk, jam palsu tak sampai
+                monotonic=_FakeClock(step=5.0),
+                sleep=_no_sleep,
+            )
+        finally:
+            store.recover_stuck = real_recover
+        # Hanya sapuan startup; tidak ada sapuan tambahan di dalam putaran.
+        self.assertEqual(len(calls), 1)
 
 
 if __name__ == "__main__":
