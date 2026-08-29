@@ -3,10 +3,10 @@
 > File hidup. Dibaca di awal tiap sesi, ditulis ulang di akhir tiap sesi.
 > Satu-satunya memori antar sesi agent. Jaga tetap pendek (< 100 baris).
 
-**Terakhir diperbarui:** 2026-08-29 (sesi R2)
-**Status project:** 🟨 **JALAN** — 12/15 fase selesai, acceptance 9/12
-**Fase aktif:** — (R2 ditutup & ter-push; gerbang kesehatan hijau, 110/110)
-**Fase berikutnya:** **P12 Throughput** (tidak ada temuan terbuka)
+**Terakhir diperbarui:** 2026-08-29 (sesi P12)
+**Status project:** 🟨 **JALAN** — 13/15 fase selesai, acceptance 10/12
+**Fase aktif:** — (P12 ditutup & ter-push; gerbang kesehatan hijau, 122/122)
+**Fase berikutnya:** **P13 Laporan + Konsultasi** (tidak ada temuan terbuka)
 
 ---
 ## Status fase
@@ -25,7 +25,7 @@
 | P9 Bukti Crash-Recovery | ✅ selesai | commit `P09`; 3k chaos, kill -9 2×, ok 423→804→2.907, 8 yatim pulih, 0 dup |
 | P10 Dashboard | ✅ selesai | commit `P10`; read-only :8120, HTMX 2 dtk, 6 angka + throughput, selisih DB=0 |
 | P11 Run Penuh 50k | ✅ selesai | commit `P11`; 49.950 tuntas, ok 48.273/failed 844/dead 833, dup 0/0, 2 kill, 7 yatim pulih, 2.837,8 dtk |
-| P12 Throughput | ⬜ belum | record/jam per N worker → ekstrapolasi 6 juta record |
+| P12 Throughput | ✅ selesai | commit `P12`; 7 nilai N di subset sama, 81.915 rec/jam @8, jenuh N=8, 6 juta ≈ 3,0 hari |
 | P13 Laporan + Konsultasi | ⬜ belum | `REPORT.xlsx`, digest 0 jargon, `docs/CONSULTATION.md` |
 | P14 Packaging | ⬜ belum | video 2 mnt, `make all`, README publik, audit |
 
@@ -48,6 +48,9 @@ Legenda: ⬜ belum · 🟨 jalan · ✅ selesai · 🟥 blocked
   (gitignored); bukti di `phases/phase-11-full-run.md`. Repo privat `github.com/rayinailham/surgeline`;
   kolom commit memakai subjek (`PNN`), bukan hash. (R1: 2 test regresi.)
 - **R2:** `worker._drain_queue` (putaran tanpa browser, jam & sleep disuntik) + 2 test regresi.
+- **P12:** `src/throughput.py` (jendela wall-clock, tabel skala, titik jenuh, ekstrapolasi) +
+  `scripts/scale_bench.py` (sapuan N worker di subset adil, menolak menimpa run lama) +
+  `docs/THROUGHPUT.md` (7 nilai N, ulangan < 1%, asumsi terbuka, kalimat proposal); 12 test.
 
 ## Fakta terverifikasi tentang mesin ini (P0, 2026-08-28)
 - Python **3.13.13** · Docker/Compose/ffmpeg/Make/sqlite3 ada · port project `8110`/`8120`.
@@ -72,24 +75,20 @@ Legenda: ⬜ belum · 🟨 jalan · ✅ selesai · 🟥 blocked
 | Antrean WAL aktif | `journal_mode=wal` | ✅ persisten di file, terbaca proses lain (sqlite3 CLI) |
 | Klaim paralel | 0 double-claim | 4 worker, 500 attempts; 489 ok = 489 ref unik; 0 sukses oleh >1 worker |
 | Dashboard vs DB | selisih 0 | P11 skala penuh: 49.950 = ok 48.273 + failed 844 + dead 833, pending/claimed 0; selisih 0 (P10: 64 poll HTTP 200, selisih 0) |
-| Throughput | terukur | **run penuh: 17,01 ok/dtk = 61.225 record/jam @4 worker** (48.273 ok / 2.837,8 dtk, termasuk 2 restart); pass final 18,99 job/dtk; burst P7 25,86 job/dtk |
+| Throughput | terukur | **81.915 rec/jam @8 worker** (jenuh N=8: N=12 hanya +4,2%, N=16 −0,9%, N=24 −4,7%). Skala: 22.204/40.627/63.565/81.915/85.388/84.631/80.664 rec/jam @ N=1/2/4/8/12/16/24, subset 800 identik (ok 776/failed 17/dead 7 di ketujuhnya). Ulangan N=4 +0,7%, N=8 +0,03%. Skala penuh P11 @4: 61.270 rec/jam (−3,6% vs subset @4 walau 62× lebih besar + 2 kill) |
 | Memori generator / loader | datar | gen 10k=49.956/50k=50.008 KiB; loader 10k=50.600/50k=57.044 KiB (+12,74%) |
-| Unit test hijau | selalu | **110/110 OK** (+2 regresi R2); 15 test dashboard OK; `test_target_contract` 40 run berturut, gagal=0 (R1) |
-| Acceptance project | 12/12 | 9/12 (P11 menutup A1 run penuh, A2 dedup, A3 resume, A4 retry/dead-letter, A5 last_error, A6 dashboard=DB pada skala 49.950) |
+| Unit test hijau | selalu | **122/122 OK** (+12 test P12, +2 regresi R2); 15 test dashboard OK; `test_target_contract` 40 run berturut, gagal=0 (R1) |
+| Acceptance project | 12/12 | 10/12 (P12 menutup A7 throughput terukur + ekstrapolasi 6 juta; sisa A8 memori loader ✅ terukur di P5 tapi belum dicentang, A11 salinan bersih & A12 di P14) |
 
 ## Temuan audit
-- ✅ **R2 (ditutup):** sapuan lease dulu menumpang cabang `claim_one is None`, jadi selama antrean
-  penuh ia tak pernah jatuh tempo (P11: 3 yatim disapu 27 mnt, bukan 60 dtk seperti bunyi D8);
-  latensi, bukan kehilangan. Perbaikan: putaran dipisah ke `worker._drain_queue` (seam jam/sleep,
-  tanpa Playwright), sapuan dijadwalkan **waktu** di puncak putaran. E2E 400 job, yatim lahir saat
-  antrean penuh: **lama 41,0 dtk (sisa pending=4)** vs **baru 23,0 dtk (sisa pending=136)**, ≤ lease/2=30;
-  dua run ok 389/failed 8/dead 3, dup 0/0. 2 regresi `TestJadwalSapuanLease` (GAGAL di kode lama).
+- ✅ **R2 (ditutup):** sapuan lease dijadwalkan waktu di `worker._drain_queue`, bukan menumpang
+  antrean kosong. E2E: 41,0 → **23,0 dtk** (≤ lease/2); 2 regresi `TestJadwalSapuanLease`.
 - ⬜ Target cold-start: 1 HTTP 500 asli (`PRAGMA journal_mode=WAL` → `database is locked`) saat 4
   worker menabrak container segar. Milik target, worker pulih sendiri. Rapikan di P14, bukan bug D3.
 - ✅ **R1 (ditutup):** flaky kontrak akibat ref acak kena chaos deterministik; `_honest_ref()` + 2 regresi.
 
 ## Blocker & keputusan masih 🔓
-- Tidak ada blocker. D7 & D8 terkunci di P8; D11 terkunci di P10. Tidak ada 🔓 jatuh di P11.
+- Tidak ada blocker. D7 & D8 terkunci di P8; D11 terkunci di P10. Tidak ada 🔓 jatuh di P12.
 - 🔓 D16 (repo publik) → **butuh izin eksplisit user**, jangan dikunci otomatis.
 
 1. Mesin dipakai paralel: jangan sentuh container di luar `surgeline-*`; `crosscheck-tut-*` (8090) & `~/infra/` haram.
