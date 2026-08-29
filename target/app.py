@@ -35,6 +35,7 @@ EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s.]+(\.[^@\s.]+)+$")
 REF_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 
 _lock = threading.Lock()
+_init_lock = threading.Lock()
 _conn: sqlite3.Connection | None = None
 
 SCHEMA = """
@@ -52,15 +53,25 @@ CREATE TABLE IF NOT EXISTS submissions (
 
 
 def _connect() -> sqlite3.Connection:
-    """Satu koneksi proses-lebar; tulis diserialkan oleh _lock."""
+    """Satu koneksi proses-lebar; tulis diserialkan oleh _lock.
+
+    Inisialisasi ikut dikunci: tanpa itu, beberapa thread request yang menabrak
+    container yang baru hidup sama-sama membuka koneksi dan menjalankan
+    `PRAGMA journal_mode=WAL` bersamaan, dan yang kalah balas `database is locked`
+    (HTTP 500 asli, di luar chaos D3).
+    """
     global _conn
     if _conn is None:
-        os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)
-        _conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-        _conn.execute("PRAGMA journal_mode=WAL")
-        _conn.execute("PRAGMA synchronous=NORMAL")
-        _conn.executescript(SCHEMA)
-        _conn.commit()
+        with _init_lock:
+            if _conn is None:
+                os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)
+                conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=15.0)
+                conn.execute("PRAGMA busy_timeout=15000")
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA synchronous=NORMAL")
+                conn.executescript(SCHEMA)
+                conn.commit()
+                _conn = conn
     return _conn
 
 

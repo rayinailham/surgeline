@@ -1,0 +1,54 @@
+// SurgeLine — arsitektur (P14). Render: make diagram  (butuh graphviz `dot`)
+digraph surgeline {
+  rankdir=LR;
+  ranksep=1.0;
+  nodesep=0.45;
+  compound=true;
+  bgcolor="#ffffff";
+  fontname="DejaVu Sans";
+  node [fontname="DejaVu Sans", fontsize=11, shape=box, style="rounded,filled", penwidth=0];
+  edge [fontname="DejaVu Sans", fontsize=9, color="#5b6472", penwidth=1.1];
+  labelloc="t";
+  label=<<b>SurgeLine</b> — bulk form submission tahan crash · state di SQLite, bukan di memori proses>;
+  fontsize=15;
+
+  subgraph cluster_in {
+    label="1 · Masukan"; fontsize=10; color="#c8ced8"; style="rounded"; fontcolor="#5b6472"; labeljust="l"; margin=14;
+    gen  [label="Generator\nscripts/gen_data.py\n50.000 record sintetis\nCSV + XLSX (streamed)", fillcolor="#e8eef7"];
+    file [label="records.csv / .xlsx", shape=note, fillcolor="#f3f5f9"];
+  }
+
+  subgraph cluster_queue {
+    label="2 · Antrean (sumber kebenaran)"; fontsize=10; color="#c8ced8"; style="rounded"; fontcolor="#5b6472"; labeljust="l"; margin=14;
+    loader [label="Loader\nsrc/load.py\nstream + INSERT OR IGNORE", fillcolor="#e8eef7"];
+    db     [label="data/<run>/queue.db\nSQLite WAL\njobs · attempts\nUNIQUE(external_ref)", shape=cylinder, style=filled, fillcolor="#fde8c8"];
+    lease  [label="Lease recovery\nsrc/recover.py\nclaimed > 120 dtk → pending", fillcolor="#f1e7fb"];
+  }
+
+  subgraph cluster_work {
+    label="3 · Eksekusi"; fontsize=10; color="#c8ced8"; style="rounded"; fontcolor="#5b6472"; labeljust="l"; margin=14;
+    runner [label="Runner\nsrc/run.py\nN proses worker", fillcolor="#e8eef7"];
+    worker [label="Worker ×N\nsrc/worker.py\nklaim atomik BEGIN IMMEDIATE\nPlaywright headless Chromium\nretry 5× backoff 1·2·4·8·16 dtk", fillcolor="#dff0e3"];
+    target [label="Target app (milik sendiri)\nDocker 127.0.0.1:8110\nsengaja gagal 5%:\n500 · lambat · tolak validasi\nsukses → nomor konfirmasi SL-xxxxxxxx", fillcolor="#fbdcdc"];
+  }
+
+  subgraph cluster_out {
+    label="4 · Keluaran"; fontsize=10; color="#c8ced8"; style="rounded"; fontcolor="#5b6472"; labeljust="l"; margin=14;
+    dash   [label="Dashboard\nsrc/dashboard.py :8120\nread-only (mode=ro), HTMX 2 dtk", fillcolor="#e8eef7"];
+    report [label="Laporan\nsrc/report.py\ndigest.md + REPORT.xlsx\n(5 lembar, 0 jargon)", fillcolor="#e8eef7"];
+  }
+
+  gen -> file;
+  file -> loader [label="baca bertahap"];
+  loader -> db [label="pending\nduplikat ditolak DB"];
+  runner -> worker [label="spawn"];
+  db -> worker [label="claim_one\npending → claimed"];
+  worker -> target [label="isi form\n(browser, bukan API)"];
+  target -> worker [label="nomor konfirmasi\n| 500 / 422 / timeout"];
+  worker -> db [label="ok + confirmation\nfailed / dead + last_error"];
+  db -> lease [label="job yatim\n(worker mati saat claimed)", style=dashed];
+  lease -> db [label="kembali ke pending", style=dashed];
+  db -> dash [label="hitung status", style=dashed];
+  db -> report [label="query ulang", style=dashed];
+
+}

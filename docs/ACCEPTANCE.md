@@ -23,14 +23,14 @@ perintah pembuktinya.
 | A8 | Impor 50.000 baris Excel tidak membuat memori membengkak | ✅ P5 (RSS loader 10k=50.600 KiB, 50k=57.044 KiB → +12,74%, bukan 5×) | grafik/tabel RSS loader datar (≤ ambang), bukan naik linear terhadap baris |
 | A9 | Klaim atomik: N worker paralel, 0 job dikerjakan dua worker | ✅ P7 (4 worker, 500 klaim, 0 double-success) | `SELECT external_ref,COUNT(*) FROM attempts GROUP BY external_ref HAVING COUNT(*)>… ` / bukti tak ada double-claim |
 | A10 | Job "nyangkut" (worker mati saat claimed) dipulihkan, tidak hilang | ✅ P8 (`kill -9` saat `claimed` → lease → `pending` → `ok`, dup 0) | uji lease: bunuh worker saat `claimed` → job kembali `pending` → akhirnya `ok` |
-| A11 | Reproducible satu perintah di salinan bersih | ⬜ | `rsync` ke folder baru → `make all` (port 8111/8121) exit 0, hasil sama |
-| A12 | Nol kredensial bocor; target milik sendiri dinyatakan di README | ⬜ | `make audit` → 0 kebocoran · `.env`/`data/`/`*.db` tak ter-track · README memuat pernyataan legal |
+| A11 | Reproducible satu perintah di salinan bersih | ✅ P14 (`/tmp/surgeline-clean`, port 8111: `make all` exit 0; 49.950 tuntas, ok 48.273 / failed 844 / dead 833 — **identik** dengan run asli P11; dup 0/0) | `rsync` ke folder baru → `make setup && make all TARGET_PORT=8111 DASH_PORT=8121` exit 0, hasil sama |
+| A12 | Nol kredensial bocor; target milik sendiri dinyatakan di README | ✅ P14 (`make audit` 0 kebocoran atas 91 berkas ter-track; README publik membuka dengan pernyataan legal D14) | `make audit` → 0 kebocoran · `.env`/`data/`/`*.db` tak ter-track · README memuat pernyataan legal |
 
 Project baru boleh disebut **selesai** kalau A1–A12 semuanya ✅.
-Status saat ini: **10/12** — sisa A11 (salinan bersih) & A12 (audit + README publik), keduanya di P14.
+Status saat ini: **12/12** — A11 & A12 ditutup di P14.
 
 > Kolom status di atas dikoreksi di P13: P9-P12 sudah menutup A1/A3/A5/A6, dan A8 sudah
-> terukur sejak P5, tetapi tabel ini belum ikut diperbarui saat itu.
+> terukur sejak P5, tetapi tabel ini belum ikut diperbarui saat itu. A11/A12 ditutup di P14.
 
 ---
 
