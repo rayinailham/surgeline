@@ -5,8 +5,7 @@
 
 **Terakhir diperbarui:** 2026-08-29 (sesi P14)
 **Status project:** ✅ **PROJECT COMPLETE** — 15/15 fase selesai, acceptance **12/12**
-**Fase aktif:** — **Fase berikutnya:** — (tidak ada. Sisa pekerjaan hanya kalau user minta:
-membuka repo ke publik = D16, butuh izin eksplisit)
+**Fase aktif:** — **Fase berikutnya:** — (tidak ada; repo sudah publik, D16 terkunci)
 
 ---
 ## Status fase
@@ -84,8 +83,12 @@ Legenda: ⬜ belum · 🟨 jalan · ✅ selesai · 🟥 blocked
 - Tidak ada temuan terbuka.
 
 ## Blocker & keputusan masih 🔓
-- Tidak ada blocker. Semua keputusan terkunci kecuali:
-- 🔓 **D16 (repo publik)** → butuh izin eksplisit user. Repo tetap **privat**; jangan dikunci otomatis.
+- Tidak ada blocker. **Semua keputusan D1–D16 terkunci** — tidak ada 🔓 tersisa.
+- D16 dikunci 2026-08-29 atas izin eksplisit user: repo `github.com/rayinailham/surgeline`
+  kini **PUBLIK**. Gerbang sebelum flip: `make audit` 0 kebocoran + sapuan seluruh riwayat
+  (20 commit, 157 blob, 0 pola kredensial, 0 artefak runtime pernah ter-commit).
+- Masih butuh izin baru: `force-push`, hapus branch/repo, ubah history (mis. kalau nanti
+  jalur mesin di dokumen internal mau dihapus dari riwayat).
 
 1. Mesin dipakai paralel: jangan sentuh container di luar `surgeline-*`; `crosscheck-tut-*` (8090) & `~/infra/` haram.
 2. Worker dipagari kode: hanya `127.0.0.1`/`localhost` (D14). Sebelum sesi ber-browser:

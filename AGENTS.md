@@ -34,11 +34,12 @@ sebut nama unit/container secara eksplisit**, jangan pernah wildcard (`systemctl
   memakai `docker-compose.yml` **sendiri** di root `surgeline/`, bukan yang di `infra/`.
 - Jangan hapus revision browser lama di `~/.cache/ms-playwright` (MCP `chrome-devtools`
   memakai `chromium-1228`).
-- Git **sudah diizinkan** untuk project ini (D13): repo privat
+- Git **sudah diizinkan** untuk project ini (D13): repo
   `git@rayin-personal:rayinailham/surgeline.git`, akun **personal** `rayinailham`.
   Commit dan push **wajib** di akhir tiap fase yang selesai. Jangan pakai akun work
   (`rayin-kantor`) atau sesi MCP GitHub milik akun itu.
-  Masih butuh izin baru: repo jadi publik (D16), `force-push`, hapus branch/repo, ubah history.
+  Repo **sudah publik** sejak 2026-08-29 (D16 dikunci atas izin eksplisit user).
+  Masih butuh izin baru: `force-push`, hapus branch/repo, ubah history.
 
 ## 2. Runtime deliverable wajib berdiri sendiri (D2, D5)
 

@@ -94,7 +94,7 @@ Catatan konsultasi (P13) tetap menekankan: **kalau target punya API, browser tid
 ## D13 — Git: personal, privat, commit tiap fase 🔒
 Repo `git@rayin-personal:rayinailham/surgeline.git`, akun **personal** `rayinailham`, **privat**.
 Commit + push **wajib** di akhir tiap fase (gerbang di `AGENTS.md` §6). Satu fase = satu commit.
-Butuh izin baru user: repo publik (D16), force-push, hapus branch/repo, ubah history.
+Butuh izin baru user: force-push, hapus branch/repo, ubah history. (Repo publik: D16, sudah diizinkan 2026-08-29.)
 
 ## D14 — Etika/legal 🔒
 Target uji **hanya milik sendiri**. Tidak ada submission ke sistem pihak lain, tidak ada
@@ -107,5 +107,21 @@ multi-tenant/auth, DB eksternal (Postgres/TiDB) sebagai runtime, message queue e
 (RabbitMQ/Redis), deploy cloud, UI admin CRUD, dukungan Windows/macOS. 50.000 record cukup
 membuktikan semua klaim pitch — tidak perlu benar-benar 6 juta (cukup ekstrapolasi terukur di P12).
 
-## D16 — Repo publik 🔓 (butuh izin eksplisit user)
-Menjadikan repo publik butuh persetujuan user, tidak boleh dikunci otomatis oleh agent.
+## D16 — Repo publik 🔒 (dikunci 2026-08-29, atas izin eksplisit user)
+`github.com/rayinailham/surgeline` **publik** sejak 2026-08-29 (sesi P14), diminta user
+secara eksplisit — bukan diputuskan agent. Diflip lewat `gh repo edit --visibility public`
+dengan akun personal `rayinailham` (D13).
+
+Gerbang yang dilewati sebelum diflip (bukan hanya `make audit` atas HEAD):
+- `make audit` → 91 berkas ter-track, **0 kebocoran**;
+- seluruh **riwayat** dipindai, bukan cuma HEAD: 20 commit, 157 blob unik, **0 pola
+  kredensial**, dan tidak pernah ada `.env` / `data/` / `reports/` / `*.db` ter-commit.
+
+Yang sekarang ikut terlihat publik, dan memang disengaja (9 "catatan" audit): jalur mesin
+`/home/<user>/...` dan catatan lingkungan di dokumen kerja internal (`AGENTS.md`,
+`KICKSTART.md`, `env-check.md`, `docs/TARGET.md`, `docs/TOOLS.md`, `phases/`) — nama service
+lokal dan port mesin dev, tanpa kredensial. Itu sebabnya pemindai punya tingkat "catatan":
+supaya keputusan ini diambil sadar. Menghapusnya dari riwayat = rewrite history, dan itu
+**butuh izin baru** (lihat D13).
+
+Masih butuh izin baru: `force-push`, hapus branch/repo, ubah history.
