@@ -3,10 +3,10 @@
 > File hidup. Dibaca di awal tiap sesi, ditulis ulang di akhir tiap sesi.
 > Satu-satunya memori antar sesi agent. Jaga tetap pendek (< 100 baris).
 
-**Terakhir diperbarui:** 2026-08-29 (sesi P10)
-**Status project:** 🟨 **JALAN** — 11/15 fase selesai, acceptance 6/12
-**Fase aktif:** — (P10 selesai & ter-push; gerbang kesehatan hijau)
-**Fase berikutnya:** **P11 — Run Penuh 50k** (chaos + ≥2 kill, status akhir bersih, 0 dup)
+**Terakhir diperbarui:** 2026-08-29 (sesi P11)
+**Status project:** 🟨 **JALAN** — 12/15 fase selesai, acceptance 9/12
+**Fase aktif:** — (P11 selesai & ter-push; gerbang kesehatan hijau)
+**Fase berikutnya:** **R2 lebih dulu** (temuan sapuan lease, lihat §Temuan) → **P12 Throughput**
 
 ---
 ## Status fase
@@ -24,7 +24,7 @@
 | P8 Ketahanan | ✅ selesai | commit `P08`; chaos 100: ok 80 / failed 10 / dead 10 (semua ber-`last_error`); kill -9 → lease → ok |
 | P9 Bukti Crash-Recovery | ✅ selesai | commit `P09`; 3k chaos, kill -9 2×, ok 423→804→2.907, 8 yatim pulih, 0 dup |
 | P10 Dashboard | ✅ selesai | commit `P10`; read-only :8120, HTMX 2 dtk, 6 angka + throughput, selisih DB=0 |
-| P11 Run Penuh 50k | ⬜ belum | 50k + chaos + ≥2 kill → status akhir bersih, 0 dup |
+| P11 Run Penuh 50k | ✅ selesai | commit `P11`; 49.950 tuntas, ok 48.273/failed 844/dead 833, dup 0/0, 2 kill, 7 yatim pulih, 2.837,8 dtk |
 | P12 Throughput | ⬜ belum | record/jam per N worker → ekstrapolasi 6 juta record |
 | P13 Laporan + Konsultasi | ⬜ belum | `REPORT.xlsx`, digest 0 jargon, `docs/CONSULTATION.md` |
 | P14 Packaging | ⬜ belum | video 2 mnt, `make all`, README publik, audit |
@@ -33,30 +33,27 @@ Legenda: ⬜ belum · 🟨 jalan · ✅ selesai · 🟥 blocked
 
 ## Artefak yang sudah lahir
 - **P0:** `pyproject.toml`/`uv.lock`/`.python-version` (3.13), `env-check.md`, `Makefile`, 3 smoke test
-- **P1:** `target/` (FastAPI form+validasi+konfirmasi, Dockerfile), `docker-compose.yml` root,
-  `docs/TARGET.md` (selector D6), `test_target_contract.py` 7 test (skip kalau `:8110` mati)
-- **P2:** chaos hash tiga mode di target + `docs/CHAOS.md`; `scripts/target_oracles.py` + `make target-oracles`
-- **P3:** `scripts/gen_data.py` CSV+XLSX write-only (50k, seed 42), `docs/DATA_DICTIONARY.md`, 2 test
-- **P4:** `src/schema.py` (WAL, `assert_transition`, `status_counts`), 24 test, `docs/SCHEMA.md` **terkunci** (`SCHEMA_VERSION=1`)
-- **P5:** `src/load.py` stream CSV/XLSX + validasi sebelum `INSERT OR IGNORE`; `src/test_load.py` 6 test
-- **P6:** `src/store.py` (`claim_one` `BEGIN IMMEDIATE`, `mark_ok`/`mark_failed`/`release`;
-  transisi + audit satu transaksi), `src/worker.py` (Chromium headless, parser halaman hasil,
-  pagar target lokal D14), `src/test_worker.py` 30 test dgn fixture HTML
-- **P7:** `src/run.py` runner N proses + retry write lock; `src/test_concurrency.py` (union 500 job, irisan kosong)
-- **P8:** `store.READY_AT` (backoff+jitter deterministik, tanpa kolom baru), `store.release`
-  → dead-letter, `store.time_until_ready`, `store.recover_stuck` (sapuan lease + tutup audit
-  yatim), `src/recover.py` CLI; `src/test_resilience.py` 16 test. D7/D8 **dikunci**:
-  `MAX_ATTEMPTS=5`, base 1 dtk ×2 (atap 30 dtk), jitter 0-25%, `LEASE_TIMEOUT_SECONDS=120`
-- **P9:** `docs/RESUME_PROOF.md`; chaos 3.000 job, 2× kill paksa, 8 klaim yatim disapu lease; rekaman → P14.
-- **P10:** `src/dashboard.py`, template+HTMX lokal, koneksi SQLite `mode=ro`, 15 test; screenshot gitignored → P14.
-- **R1:** perbaikan flaky test kontrak target (lihat §Temuan); 2 test regresi baru.
-- Repo privat `github.com/rayinailham/surgeline`; kolom commit memakai subjek (`PNN`), bukan hash.
+- **P1:** `target/` (FastAPI form+konfirmasi, Dockerfile) + `docker-compose.yml` root,
+  `docs/TARGET.md` (selector D6), 7 test kontrak (skip kalau `:8110` mati)
+- **P2/P3:** chaos hash 3 mode + `docs/CHAOS.md` + `scripts/target_oracles.py`; `scripts/gen_data.py` CSV+XLSX write-only (50k, seed 42) + `docs/DATA_DICTIONARY.md`
+- **P4/P5:** `src/schema.py` + `docs/SCHEMA.md` **terkunci** (`SCHEMA_VERSION=1`, 24 test);
+  `src/load.py` stream CSV/XLSX + validasi sebelum `INSERT OR IGNORE` (6 test)
+- **P6/P7:** `src/store.py` (`claim_one` `BEGIN IMMEDIATE`, transisi+audit satu transaksi),
+  `src/worker.py` (Chromium headless, pagar target lokal D14), `src/run.py` runner N proses; 32 test
+- **P8:** `store.READY_AT` (backoff+jitter deterministik), dead-letter, `recover_stuck`,
+  `src/recover.py`, 16 test. D7/D8 **dikunci**: `MAX_ATTEMPTS=5`, 1 dtk ×2 (atap 30),
+  jitter 0-25%, `LEASE_TIMEOUT_SECONDS=120`
+- **P9/P10:** `docs/RESUME_PROOF.md` (3.000 job, 2× kill, 8 yatim); `src/dashboard.py` + HTMX
+  lokal, SQLite `mode=ro`, 15 test; rekaman & screenshot → P14.
+- **P11:** `scripts/run_summary.py` → `data/<run>/run.json`; run penuh `data/full50k/` + log kill
+  (gitignored); bukti lengkap di `phases/phase-11-full-run.md`. (R1: 2 test regresi.)
+  Repo privat `github.com/rayinailham/surgeline`; kolom commit memakai subjek (`PNN`), bukan hash.
 
 ## Fakta terverifikasi tentang mesin ini (P0, 2026-08-28)
 - Python **3.13.13** · Docker/Compose/ffmpeg/Make/sqlite3 ada · port project `8110`/`8120`.
 - `9router.service` (`:20128`) `active` — JANGAN PERNAH disentuh (AGENTS §0). Bisa memutus sesi sendiri.
-- Playwright pip `1.62.0`; jangan prune `~/.cache/ms-playwright` (chrome-devtools pin chromium-1228).
-- `make` user = alias `make -j16`; pakai `/usr/bin/make`. Skill `bulk-form-runner` tidak terpasang.
+- Playwright pip `1.62.0`; jangan prune `~/.cache/ms-playwright` (chrome-devtools pin
+  chromium-1228). `make` user = alias `make -j16`; pakai `/usr/bin/make`.
 
 ## Metrik (diisi angka nyata saat fase berjalan)
 
@@ -67,30 +64,36 @@ Legenda: ⬜ belum · 🟨 jalan · ✅ selesai · 🟥 blocked
 | Chaos deterministik | ≈5%, 3 mode, 2 run identik | 112/2.000 = 5,60%; 500=38, lambat=39, validasi=35; diff=0 |
 | Record data uji | 50.000 | 50.000 CSV + XLSX; 49.950 key unik + 50 dup sengaja; 0 invalid |
 | Duplikat external_ref antrean | 0 | 50k dibaca → 49.950 pending; 50 dup ditolak; reload: 0 masuk/50k ditolak; DB dup=0 |
-| Kill -9 saat run → tetap selesai | ≥2× | P9: 2×; ok 423→804→2.907; 8/8 klaim yatim pulih; terminal 3.000/3.000; dup ref/konfirmasi 0/0 |
-| Kegagalan target ter-retry/tercatat | 100% | chaos 100 job: audit ok 80 / retryable 50 / permanent 10; `dead` 10 (5 percobaan, 100% ber-`last_error`), `failed` 10 (422, 1 percobaan, tanpa retry), 0 pending/claimed tersisa |
+| Kill -9 saat run → tetap selesai | ≥2× | **P11 (50k): 2×; ok 0→10.621→21.508→48.273; 7/7 yatim pulih (semua `ok`); terminal 49.950/49.950; dup ref/konfirmasi 0/0**. P9 (3k): 2×, 8/8 yatim pulih |
+| Kegagalan target ter-retry/tercatat | 100% | P11 50k: `dead` 833 = **persis** himpunan chaos `server_error` (5 percobaan, 100% ber-`last_error`); `failed` 844 = **persis** himpunan `validation` (422, 1 percobaan, tanpa retry); `slow` 842 + jujur 47.431 semuanya `ok` |
 | Gangguan sementara → akhirnya sukses | 100% | target dimatikan di tengah run: 20 job `retryable` → target hidup → 20/20 `ok` di percobaan ke-3 |
-| Nomor konfirmasi tersimpan tiap sukses | 100% | 195/195 (batch 200) + 80/80 (chaos P8) + 20/20 (gangguan sementara); 0 `ok` tanpa konfirmasi, 0 duplikat konfirmasi |
+| Nomor konfirmasi tersimpan tiap sukses | 100% | P11: 48.273/48.273 `ok` berkonfirmasi, 0 duplikat konfirmasi, 0 `ok` kosong |
 | Antrean WAL aktif | `journal_mode=wal` | ✅ persisten di file, terbaca proses lain (sqlite3 CLI) |
 | Klaim paralel | 0 double-claim | 4 worker, 500 attempts; 489 ok = 489 ref unik; 0 sukses oleh >1 worker |
-| Dashboard vs DB | selisih 0 | :8120 read-only; total 49.950 = pending 49.343 + claimed 1 + ok 595 + failed 11 + dead 0; max selisih 0; 64 poll HTTP 200 |
-| Throughput | terukur | 25,86 job/dtk @4 worker (500 attempts / 19,335 dtk; baseline P12) |
+| Dashboard vs DB | selisih 0 | P11 skala penuh: 49.950 = ok 48.273 + failed 844 + dead 833, pending/claimed 0; selisih 0 (P10: 64 poll HTTP 200, selisih 0) |
+| Throughput | terukur | **run penuh: 17,01 ok/dtk = 61.225 record/jam @4 worker** (48.273 ok / 2.837,8 dtk, termasuk 2 restart); pass final 18,99 job/dtk; burst P7 25,86 job/dtk |
 | Memori generator / loader | datar | gen 10k=49.956/50k=50.008 KiB; loader 10k=50.600/50k=57.044 KiB (+12,74%) |
 | Unit test hijau | selalu | 108/108 OK; 15 test dashboard OK; `test_target_contract` 40 run berturut, gagal=0 (R1) |
-| Acceptance project | 12/12 | 6/12 (+A6 dashboard=DB; A2/A3 dedup+resume, A4 retry/dead-letter, A9 klaim atomik, A10 lease recovery) |
+| Acceptance project | 12/12 | 9/12 (P11 menutup A1 run penuh, A2 dedup, A3 resume, A4 retry/dead-letter, A5 last_error, A6 dashboard=DB pada skala 49.950) |
 
-## Temuan audit (ditutup)
-- **R1:** flaky kontrak akibat ref acak kena chaos deterministik (1.051/20.000 = 5,25%);
+## Temuan audit
+- 🟨 **R2 (TERBUKA, kerjakan sebelum P12):** sapuan lease hanya jalan saat `claim_one`
+  mengembalikan `None` (`src/worker.py:265`), jadi selama antrean masih penuh ia tidak pernah
+  jatuh tempo — 3 yatim kill2 baru disapu 27 mnt kemudian, bukan 60 dtk seperti bunyi D8.
+  Dampak **latensi, bukan kehilangan** (7/7 pulih, status akhir bersih). Remediasi: sapuan
+  berbasis waktu terlepas dari hasil klaim + test regresi; commit terpisah.
+- ⬜ Target cold-start: 1 HTTP 500 asli (`PRAGMA journal_mode=WAL` → `database is locked`)
+  saat 4 worker menabrak container segar. Milik target, bukan pipeline; worker pulih sendiri
+  (`REC-000002` retryable → ok). Kandidat rapikan di P14, bukan bug D3.
+- ✅ **R1 (ditutup):** flaky kontrak akibat ref acak kena chaos deterministik (1.051/20.000 = 5,25%);
   `_honest_ref()` + 2 regresi anti-drift menutupnya tanpa mengubah target D3.
 
 ## Blocker & keputusan masih 🔓
-- Tidak ada blocker. D7 & D8 terkunci di P8; D11 terkunci di P10.
+- Tidak ada blocker. D7 & D8 terkunci di P8; D11 terkunci di P10. Tidak ada 🔓 jatuh di P11.
 - 🔓 D16 (repo publik) → **butuh izin eksplisit user**, jangan dikunci otomatis.
 
 1. Mesin dipakai paralel: jangan sentuh container di luar `surgeline-*`; `crosscheck-tut-*` (8090) & `~/infra/` haram.
-2. Field terkunci (form target = DATA_DICTIONARY = SCHEMA §1):
-   `external_ref, full_name, email, policy_no, amount, notes`; `external_ref` = natural key (D4).
+2. Field terkunci (form=DATA_DICTIONARY=SCHEMA §1): `external_ref` (natural key, D4), `full_name`, `email`, `policy_no`, `amount`, `notes`.
 3. Worker dipagari kode: hanya `127.0.0.1`/`localhost` (D14). Sebelum sesi ber-browser:
-   `scripts/arch_provision.sh` + `playwright install chromium` (tanpa deps); Chromium `151.0.7922.34`.
-4. Mode chaos `server_error` berhenti di `dead` setelah 5 percobaan. Bukti P9 (versi P8):
-   2.907 ok, 44 failed, 49 dead; 0 status nonterminal.
+   `scripts/arch_provision.sh` + `playwright install chromium` (tanpa deps).
+4. Mode chaos `server_error` selalu berakhir `dead` (5 percobaan) — sah, bukan retry bocor.
